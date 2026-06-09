@@ -1,0 +1,66 @@
+import { Switch, Route, Router } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme";
+import { AuthProvider } from "@/lib/auth";
+import NotFound from "@/pages/not-found";
+
+import Home from "@/pages/Home";
+import Tuners from "@/pages/Tuners";
+import TunerProfile from "@/pages/TunerProfile";
+import Services from "@/pages/Services";
+import HowItWorks from "@/pages/HowItWorks";
+import Join from "@/pages/Join";
+import Pricing from "@/pages/Pricing";
+import SignIn from "@/pages/SignIn";
+import AuthCallback from "@/pages/AuthCallback";
+import Book from "@/pages/Book";
+import CustomerDashboard from "@/pages/CustomerDashboard";
+import TunerDashboard from "@/pages/TunerDashboard";
+import { About, Privacy, Terms, Contact } from "@/pages/Static";
+
+function AppRouter() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+      <Route path="/tuners" component={Tuners} />
+      <Route path="/tuners/:id" component={TunerProfile} />
+      <Route path="/services" component={Services} />
+      <Route path="/how-it-works" component={HowItWorks} />
+      <Route path="/join" component={Join} />
+      <Route path="/pricing" component={Pricing} />
+      <Route path="/signin" component={SignIn} />
+      <Route path="/auth/callback" component={AuthCallback} />
+      <Route path="/book/:id" component={Book} />
+      <Route path="/dashboard/customer" component={CustomerDashboard} />
+      <Route path="/dashboard/tuner" component={TunerDashboard} />
+      <Route path="/about" component={About} />
+      <Route path="/contact" component={Contact} />
+      <Route path="/privacy" component={Privacy} />
+      <Route path="/terms" component={Terms} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router hook={useHashLocation}>
+              <AppRouter />
+            </Router>
+          </TooltipProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;
