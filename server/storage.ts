@@ -22,269 +22,239 @@ import type {
   Subscription,
   ListingWithDetails,
 } from "@shared/schema";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
-import { eq, and } from "drizzle-orm";
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import * as schema from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-const sqlite = new Database("data.db");
-sqlite.pragma("journal_mode = WAL");
-export const db = drizzle(sqlite);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL!,
+  ssl: process.env.DATABASE_URL?.includes("railway.internal")
+    ? false
+    : { rejectUnauthorized: false },
+});
+
+export const db = drizzle(pool, { schema });
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 export interface IStorage {
   // users / auth
-  getUser(id: number): User | undefined;
-  getUserByEmail(email: string): User | undefined;
-  getUserByToken(token: string): User | undefined;
-  createUser(u: InsertUser): User;
+  getUser(id: number): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByToken(token: string): Promise<User | undefined>;
+  createUser(u: InsertUser): Promise<User>;
   // listings
-  getListing(id: number): TunerListing | undefined;
-  getListingByUserId(userId: number): TunerListing | undefined;
-  getVisibleListings(): TunerListing[];
-  getListingWithDetails(id: number): ListingWithDetails | undefined;
-  getVisibleListingsWithDetails(): ListingWithDetails[];
-  updateListing(id: number, patch: Partial<TunerListing>): TunerListing | undefined;
+  getListing(id: number): Promise<TunerListing | undefined>;
+  getListingByUserId(userId: number): Promise<TunerListing | undefined>;
+  getVisibleListings(): Promise<TunerListing[]>;
+  getListingWithDetails(id: number): Promise<ListingWithDetails | undefined>;
+  getVisibleListingsWithDetails(): Promise<ListingWithDetails[]>;
+  updateListing(id: number, patch: Partial<TunerListing>): Promise<TunerListing | undefined>;
   // services
-  getServicesByListing(listingId: number): Service[];
-  createService(s: InsertService): Service;
-  deleteService(id: number): void;
+  getServicesByListing(listingId: number): Promise<Service[]>;
+  createService(s: InsertService): Promise<Service>;
+  deleteService(id: number): Promise<void>;
   // vehicles
-  getVehiclesByUser(userId: number): Vehicle[];
-  createVehicle(v: InsertVehicle): Vehicle;
+  getVehiclesByUser(userId: number): Promise<Vehicle[]>;
+  createVehicle(v: InsertVehicle): Promise<Vehicle>;
   // bookings
-  createBooking(b: Omit<Booking, "id">): Booking;
-  getBooking(id: number): Booking | undefined;
-  getBookingsByCustomer(customerId: number): Booking[];
-  getBookingsByTuner(tunerId: number): Booking[];
-  updateBooking(id: number, patch: Partial<Booking>): Booking | undefined;
+  createBooking(b: Omit<Booking, "id">): Promise<Booking>;
+  getBooking(id: number): Promise<Booking | undefined>;
+  getBookingsByCustomer(customerId: number): Promise<Booking[]>;
+  getBookingsByTuner(tunerId: number): Promise<Booking[]>;
+  updateBooking(id: number, patch: Partial<Booking>): Promise<Booking | undefined>;
   // reviews
-  getReviewsByListing(listingId: number): Review[];
-  createReview(r: InsertReview): Review;
+  getReviewsByListing(listingId: number): Promise<Review[]>;
+  createReview(r: InsertReview): Promise<Review>;
   // subscriptions
-  upsertSubscription(userId: number, status: string, currentPeriodEnd: number): Subscription;
-  setHostSubscription(userId: number, status: string): User | undefined;
-  setStripeAccount(userId: number, accountId: string): User | undefined;
+  upsertSubscription(userId: number, status: string, currentPeriodEnd: number): Promise<Subscription>;
+  setHostSubscription(userId: number, status: string): Promise<User | undefined>;
+  setStripeAccount(userId: number, accountId: string): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
-  getUser(id: number) {
-    return db.select().from(users).where(eq(users.id, id)).get();
+  async getUser(id: number) {
+    const rows = await db.select().from(users).where(eq(users.id, id));
+    return rows[0];
   }
-  getUserByEmail(email: string) {
-    return db.select().from(users).where(eq(users.email, email)).get();
+  async getUserByEmail(email: string) {
+    const rows = await db.select().from(users).where(eq(users.email, email));
+    return rows[0];
   }
-  getUserByToken(token: string) {
-    return db.select().from(users).where(eq(users.token, token)).get();
+  async getUserByToken(token: string) {
+    const rows = await db.select().from(users).where(eq(users.token, token));
+    return rows[0];
   }
-  createUser(u: InsertUser) {
-    return db
+  async createUser(u: InsertUser) {
+    const rows = await db
       .insert(users)
       .values({ ...u, token: randomUUID(), createdAt: Date.now() })
-      .returning()
-      .get();
+      .returning();
+    return rows[0];
   }
 
-  getListing(id: number) {
-    return db.select().from(tunerListings).where(eq(tunerListings.id, id)).get();
+  async getListing(id: number) {
+    const rows = await db.select().from(tunerListings).where(eq(tunerListings.id, id));
+    return rows[0];
   }
-  getListingByUserId(userId: number) {
-    return db.select().from(tunerListings).where(eq(tunerListings.userId, userId)).get();
+  async getListingByUserId(userId: number) {
+    const rows = await db.select().from(tunerListings).where(eq(tunerListings.userId, userId));
+    return rows[0];
   }
-  getVisibleListings() {
-    return db.select().from(tunerListings).where(eq(tunerListings.isVisible, true)).all();
+  async getVisibleListings() {
+    return db.select().from(tunerListings).where(eq(tunerListings.isVisible, true));
   }
-  private hydrate(l: TunerListing): ListingWithDetails {
-    const tuner = this.getUser(l.userId);
+  private async hydrate(l: TunerListing): Promise<ListingWithDetails> {
+    const tuner = await this.getUser(l.userId);
     return {
       ...l,
-      services: this.getServicesByListing(l.id),
-      reviews: this.getReviewsByListing(l.id),
+      services: await this.getServicesByListing(l.id),
+      reviews: await this.getReviewsByListing(l.id),
       tunerName: tuner?.name ?? "Tuner",
     };
   }
-  getListingWithDetails(id: number) {
-    const l = this.getListing(id);
+  async getListingWithDetails(id: number) {
+    const l = await this.getListing(id);
     return l ? this.hydrate(l) : undefined;
   }
-  getVisibleListingsWithDetails() {
-    return this.getVisibleListings().map((l) => this.hydrate(l));
+  async getVisibleListingsWithDetails() {
+    const listings = await this.getVisibleListings();
+    return Promise.all(listings.map((l) => this.hydrate(l)));
   }
-  updateListing(id: number, patch: Partial<TunerListing>) {
-    return db.update(tunerListings).set(patch).where(eq(tunerListings.id, id)).returning().get();
-  }
-
-  getServicesByListing(listingId: number) {
-    return db.select().from(services).where(eq(services.listingId, listingId)).all();
-  }
-  createService(s: InsertService) {
-    return db.insert(services).values(s).returning().get();
-  }
-  deleteService(id: number) {
-    db.delete(services).where(eq(services.id, id)).run();
+  async updateListing(id: number, patch: Partial<TunerListing>) {
+    const rows = await db
+      .update(tunerListings)
+      .set(patch)
+      .where(eq(tunerListings.id, id))
+      .returning();
+    return rows[0];
   }
 
-  getVehiclesByUser(userId: number) {
-    return db.select().from(vehicles).where(eq(vehicles.userId, userId)).all();
+  async getServicesByListing(listingId: number) {
+    return db.select().from(services).where(eq(services.listingId, listingId));
   }
-  createVehicle(v: InsertVehicle) {
-    return db.insert(vehicles).values(v).returning().get();
+  async createService(s: InsertService) {
+    const rows = await db.insert(services).values(s).returning();
+    return rows[0];
   }
-
-  createBooking(b: Omit<Booking, "id">) {
-    return db.insert(bookings).values(b).returning().get();
-  }
-  getBooking(id: number) {
-    return db.select().from(bookings).where(eq(bookings.id, id)).get();
-  }
-  getBookingsByCustomer(customerId: number) {
-    return db.select().from(bookings).where(eq(bookings.customerId, customerId)).all();
-  }
-  getBookingsByTuner(tunerId: number) {
-    return db.select().from(bookings).where(eq(bookings.tunerId, tunerId)).all();
-  }
-  updateBooking(id: number, patch: Partial<Booking>) {
-    return db.update(bookings).set(patch).where(eq(bookings.id, id)).returning().get();
+  async deleteService(id: number) {
+    await db.delete(services).where(eq(services.id, id));
   }
 
-  getReviewsByListing(listingId: number) {
-    return db.select().from(reviews).where(eq(reviews.listingId, listingId)).all();
+  async getVehiclesByUser(userId: number) {
+    return db.select().from(vehicles).where(eq(vehicles.userId, userId));
   }
-  createReview(r: InsertReview) {
-    return db.insert(reviews).values({ ...r, createdAt: Date.now() }).returning().get();
+  async createVehicle(v: InsertVehicle) {
+    const rows = await db.insert(vehicles).values(v).returning();
+    return rows[0];
   }
 
-  upsertSubscription(userId: number, status: string, currentPeriodEnd: number) {
-    const existing = db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).get();
-    if (existing) {
-      return db
+  async createBooking(b: Omit<Booking, "id">) {
+    const rows = await db.insert(bookings).values(b).returning();
+    return rows[0];
+  }
+  async getBooking(id: number) {
+    const rows = await db.select().from(bookings).where(eq(bookings.id, id));
+    return rows[0];
+  }
+  async getBookingsByCustomer(customerId: number) {
+    return db.select().from(bookings).where(eq(bookings.customerId, customerId));
+  }
+  async getBookingsByTuner(tunerId: number) {
+    return db.select().from(bookings).where(eq(bookings.tunerId, tunerId));
+  }
+  async updateBooking(id: number, patch: Partial<Booking>) {
+    const rows = await db
+      .update(bookings)
+      .set(patch)
+      .where(eq(bookings.id, id))
+      .returning();
+    return rows[0];
+  }
+
+  async getReviewsByListing(listingId: number) {
+    return db.select().from(reviews).where(eq(reviews.listingId, listingId));
+  }
+  async createReview(r: InsertReview) {
+    const rows = await db
+      .insert(reviews)
+      .values({ ...r, createdAt: Date.now() })
+      .returning();
+    return rows[0];
+  }
+
+  async upsertSubscription(userId: number, status: string, currentPeriodEnd: number) {
+    const existing = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    if (existing[0]) {
+      const rows = await db
         .update(subscriptions)
         .set({ status, currentPeriodEnd, stripeSubscriptionId: `sub_mock_${userId}` })
-        .where(eq(subscriptions.id, existing.id))
-        .returning()
-        .get();
+        .where(eq(subscriptions.id, existing[0].id))
+        .returning();
+      return rows[0];
     }
-    return db
+    const rows = await db
       .insert(subscriptions)
       .values({ userId, status, currentPeriodEnd, stripeSubscriptionId: `sub_mock_${userId}` })
-      .returning()
-      .get();
+      .returning();
+    return rows[0];
   }
-  setHostSubscription(userId: number, status: string) {
-    const u = db
+
+  async setHostSubscription(userId: number, status: string) {
+    const rows = await db
       .update(users)
       .set({ hostSubscriptionStatus: status })
       .where(eq(users.id, userId))
-      .returning()
-      .get();
+      .returning();
+    const u = rows[0];
     // gate listing visibility on subscription
-    const listing = this.getListingByUserId(userId);
+    const listing = await this.getListingByUserId(userId);
     if (listing) {
-      this.updateListing(listing.id, { isVisible: status === "active" });
+      await this.updateListing(listing.id, { isVisible: status === "active" });
     }
     return u;
   }
-  setStripeAccount(userId: number, accountId: string) {
-    return db
+
+  async setStripeAccount(userId: number, accountId: string) {
+    const rows = await db
       .update(users)
       .set({ stripeAccountId: accountId })
       .where(eq(users.id, userId))
-      .returning()
-      .get();
+      .returning();
+    return rows[0];
   }
 }
 
 export const storage = new DatabaseStorage();
 
 /* ---------------- Schema bootstrap + seed ---------------- */
-export function initDb() {
-  sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL,
-      token TEXT NOT NULL,
-      stripe_customer_id TEXT,
-      stripe_account_id TEXT,
-      host_subscription_status TEXT,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS tuner_listings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      shop_name TEXT NOT NULL,
-      location TEXT NOT NULL,
-      bio TEXT NOT NULL,
-      dyno_available INTEGER NOT NULL DEFAULT 0,
-      remote_available INTEGER NOT NULL DEFAULT 0,
-      supported_makes TEXT NOT NULL,
-      starting_price INTEGER NOT NULL,
-      rating INTEGER NOT NULL DEFAULT 50,
-      review_count INTEGER NOT NULL DEFAULT 0,
-      hero_image TEXT,
-      is_visible INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS services (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      listing_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL,
-      price INTEGER NOT NULL,
-      category TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS vehicles (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      year INTEGER NOT NULL,
-      make TEXT NOT NULL,
-      model TEXT NOT NULL,
-      modifications TEXT NOT NULL DEFAULT '',
-      fuel_type TEXT NOT NULL DEFAULT 'Pump gas'
-    );
-    CREATE TABLE IF NOT EXISTS bookings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      customer_id INTEGER NOT NULL,
-      tuner_id INTEGER NOT NULL,
-      listing_id INTEGER NOT NULL,
-      service_id INTEGER,
-      vehicle_id INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'requested',
-      subtotal INTEGER NOT NULL,
-      service_fee INTEGER NOT NULL,
-      total INTEGER NOT NULL,
-      insurance_acknowledged INTEGER NOT NULL DEFAULT 0,
-      paid INTEGER NOT NULL DEFAULT 0,
-      notes TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS reviews (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      booking_id INTEGER,
-      customer_id INTEGER NOT NULL,
-      listing_id INTEGER NOT NULL,
-      rating INTEGER NOT NULL,
-      comment TEXT NOT NULL,
-      author_name TEXT NOT NULL DEFAULT 'Customer',
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS subscriptions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      status TEXT NOT NULL,
-      current_period_end INTEGER,
-      stripe_subscription_id TEXT
-    );
-  `);
+export async function initDb() {
+  // Run drizzle migrations
+  const { migrate } = await import("drizzle-orm/node-postgres/migrator");
+  const pathMod = await import("node:path");
+  // In dev (tsx from project root): migrations at ./migrations/
+  // In production (node dist/index.cjs): migrations at ./dist/migrations/ (copied by build script)
+  const migrationsFolder = process.env.NODE_ENV === "production"
+    ? pathMod.join(process.cwd(), "dist", "migrations")
+    : pathMod.join(process.cwd(), "migrations");
+  await migrate(db, { migrationsFolder });
+  console.log("[db] migrations applied");
 
-  const existing = db.select().from(users).all();
-  if (existing.length > 0) return;
-
-  seed();
+  // Seed only if explicitly requested
+  if (process.env.SEED_DEMO_DATA === "1") {
+    const existing = await db.select().from(users);
+    if (existing.length === 0) {
+      await seed();
+    }
+  }
 }
 
-function seed() {
+async function seed() {
   const now = Date.now();
   const periodEnd = now + YEAR_MS;
 
@@ -428,7 +398,7 @@ function seed() {
 
   const tunerUserIds: number[] = [];
   for (const t of tuners) {
-    const u = storage.createUser({
+    const u = await storage.createUser({
       email: t.email,
       name: t.name,
       role: "tuner",
@@ -437,7 +407,7 @@ function seed() {
       hostSubscriptionStatus: t.sub,
     } as any);
     tunerUserIds.push(u.id);
-    const listing = db
+    const listingRows = await db
       .insert(tunerListings)
       .values({
         userId: u.id,
@@ -446,34 +416,34 @@ function seed() {
         bio: t.bio,
         dynoAvailable: t.dyno,
         remoteAvailable: t.remote,
-        supportedMakes: JSON.stringify(t.makes),
+        supportedMakes: t.makes,
         startingPrice: t.startingPrice,
         rating: t.rating,
         reviewCount: t.reviewCount,
         heroImage: t.hero,
         isVisible: t.sub === "active",
       })
-      .returning()
-      .get();
+      .returning();
+    const listing = listingRows[0];
     for (const s of t.services) {
-      storage.createService({ listingId: listing.id, ...s });
+      await storage.createService({ listingId: listing.id, ...s });
     }
     if (t.sub === "active") {
-      storage.upsertSubscription(u.id, "active", periodEnd);
+      await storage.upsertSubscription(u.id, "active", periodEnd);
     }
   }
 
   // Customers
-  const cust1 = storage.createUser({
-    email: "driver@tunelink.app",
+  const cust1 = await storage.createUser({
+    email: "driver@tunersamerica.com",
     name: "Sam Okafor",
     role: "customer",
     stripeCustomerId: "cus_mock_seed_1",
     stripeAccountId: null,
     hostSubscriptionStatus: null,
   } as any);
-  const cust2 = storage.createUser({
-    email: "alex@tunelink.app",
+  const cust2 = await storage.createUser({
+    email: "alex@tunersamerica.com",
     name: "Alex Rivera",
     role: "customer",
     stripeCustomerId: "cus_mock_seed_2",
@@ -481,7 +451,7 @@ function seed() {
     hostSubscriptionStatus: null,
   } as any);
 
-  storage.createVehicle({
+  await storage.createVehicle({
     userId: cust1.id,
     year: 2019,
     make: "Chevrolet",
@@ -489,7 +459,7 @@ function seed() {
     modifications: "Long-tube headers, cold air intake, 93 octane",
     fuelType: "Pump gas (93)",
   });
-  storage.createVehicle({
+  await storage.createVehicle({
     userId: cust2.id,
     year: 2021,
     make: "BMW",
@@ -511,7 +481,7 @@ function seed() {
     { listingId: 5, name: "Yuki N.", rating: 5, comment: "RB Motorsport's GT-R dyno session was flawless. Repeatable numbers, safe targets." },
   ];
   for (const r of reviewSeed) {
-    storage.createReview({
+    await storage.createReview({
       bookingId: null,
       customerId: cust1.id,
       listingId: r.listingId,
@@ -524,7 +494,7 @@ function seed() {
   // A sample booking for customer 1 with Apex (listing 1, service 2 = remote)
   const sub = 450;
   const fee = Math.round(sub * 0.1);
-  storage.createBooking({
+  await storage.createBooking({
     customerId: cust1.id,
     tunerId: tunerUserIds[0],
     listingId: 1,

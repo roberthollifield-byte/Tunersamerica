@@ -23,7 +23,7 @@ export default function Services() {
         <Eyebrow>Core services</Eyebrow>
         <h1 className="mt-4 max-w-3xl font-display text-4xl font-bold md:text-5xl">Every service a serious build needs.</h1>
         <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-          TuneLink tuners cover the full spectrum of modern calibration work — from remote file tuning to
+          TunersAmerica tuners cover the full spectrum of modern calibration work — from remote file tuning to
           in-person dyno sessions, diagnostics, and dedicated race support.
         </p>
       </Section>

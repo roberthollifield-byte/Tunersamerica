@@ -63,7 +63,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  initDb();
+  await initDb();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

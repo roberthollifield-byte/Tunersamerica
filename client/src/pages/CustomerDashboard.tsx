@@ -111,7 +111,7 @@ export default function CustomerDashboard() {
           {/* Bookings */}
           <TabsContent value="bookings" className="mt-6">
             {bLoading ? <Skeleton className="h-40 w-full" /> : (bookings?.length ?? 0) === 0 ? (
-              <Card className="p-12 text-center text-muted-foreground">No bookings yet. <Button variant="link" onClick={() => navigate("/tuners")}>Find a tuner</Button></Card>
+              <Card className="p-12 text-center text-muted-foreground">No bookings yet. <Button variant="ghost" onClick={() => navigate("/tuners")}>Find a tuner</Button></Card>
             ) : (
               <div className="space-y-3">
                 {bookings!.map((b) => (

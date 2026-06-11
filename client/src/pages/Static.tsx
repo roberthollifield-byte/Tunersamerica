@@ -21,7 +21,7 @@ function Page({ eyebrow, title, children }: { eyebrow: string; title: string; ch
 export function About() {
   return (
     <Page eyebrow="About" title="Connecting cars with the right tuners.">
-      <p>TuneLink is a two-sided marketplace built for the performance world. On one side are car owners — daily-driver enthusiasts, weekend racers, and serious builders. On the other are automotive tuners and tuning shops with deep platform expertise.</p>
+      <p>TunersAmerica is a two-sided marketplace built for the performance world. On one side are car owners — daily-driver enthusiasts, weekend racers, and serious builders. On the other are automotive tuners and tuning shops with deep platform expertise.</p>
       <p>Our goal is simple: make it easy to find a tuner who actually understands your platform, your modifications, and your goals — whether that work happens remotely through datalogs and file revisions, or in person on a dyno.</p>
       <p>This is a demonstration build. Payments (Stripe Connect) and transactional email (Resend) are stubbed for the preview environment.</p>
     </Page>
@@ -31,8 +31,8 @@ export function About() {
 export function Privacy() {
   return (
     <Page eyebrow="Privacy" title="Privacy Policy">
-      <p><strong>Placeholder policy.</strong> This page is a placeholder for the TuneLink demo and does not constitute a binding privacy policy.</p>
-      <p>In production, TuneLink would describe what data it collects (account details, vehicle information, booking history), how it is used, and how it is protected. We would only collect what is necessary to operate the marketplace.</p>
+      <p><strong>Placeholder policy.</strong> This page is a placeholder for the TunersAmerica demo and does not constitute a binding privacy policy.</p>
+      <p>In production, TunersAmerica would describe what data it collects (account details, vehicle information, booking history), how it is used, and how it is protected. We would only collect what is necessary to operate the marketplace.</p>
       <p>We would never sell your personal data. Payment data would be handled by Stripe and never stored on our servers.</p>
     </Page>
   );
@@ -41,7 +41,7 @@ export function Privacy() {
 export function Terms() {
   return (
     <Page eyebrow="Terms" title="Terms of Service">
-      <p><strong>Placeholder terms.</strong> This page is a placeholder for the TuneLink demo.</p>
+      <p><strong>Placeholder terms.</strong> This page is a placeholder for the TunersAmerica demo.</p>
       <p>In production these terms would cover marketplace conduct, the $99/year host subscription, the 10% customer service fee, booking and cancellation policies, and the insurance acknowledgment required before any booking is confirmed.</p>
       <p>Tuning modifies vehicle behavior. Drivers acknowledge associated risks and insurance considerations before each booking.</p>
     </Page>

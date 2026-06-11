@@ -45,7 +45,7 @@ export default function HowItWorks() {
         <Eyebrow>How it works</Eyebrow>
         <h1 className="mt-4 max-w-3xl font-display text-4xl font-bold md:text-5xl">A clear path for both sides of the garage.</h1>
         <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-          TuneLink follows a dual-audience marketplace model: one simple flow for drivers who need tuning
+          TunersAmerica follows a dual-audience marketplace model: one simple flow for drivers who need tuning
           help, and another for shops that want qualified leads.
         </p>
       </Section>

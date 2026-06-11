@@ -70,7 +70,7 @@ export default function SignIn() {
 
   const seeds = [
     { label: "Seeded tuner — Apex Calibrations (active subscription)", email: "tuner@apexcal.com", role: "tuner" as const },
-    { label: "Seeded customer — Sam Okafor (has a vehicle + booking)", email: "driver@tunelink.app", role: "customer" as const },
+    { label: "Seeded customer — Sam Okafor (has a vehicle + booking)", email: "driver@tunersamerica.com", role: "customer" as const },
   ];
 
   return (
@@ -79,7 +79,7 @@ export default function SignIn() {
         <Card className="w-full max-w-md p-8">
           <div className="flex flex-col items-center text-center">
             <LogoMark className="h-12 w-12" />
-            <h1 className="mt-4 font-display text-2xl font-bold">Sign in to TuneLink</h1>
+            <h1 className="mt-4 font-display text-2xl font-bold">Sign in to TunersAmerica</h1>
             <p className="mt-1 text-sm text-muted-foreground">We'll email you a magic link — no password.</p>
           </div>
 

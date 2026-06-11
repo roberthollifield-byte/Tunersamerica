@@ -1,10 +1,18 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import {
+  pgTable,
+  serial,
+  text,
+  integer,
+  bigint,
+  boolean,
+  jsonb,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 /* ---------------- Users ---------------- */
-export const users = sqliteTable("users", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   role: text("role").notNull(), // 'tuner' | 'customer' | 'admin'
@@ -12,7 +20,7 @@ export const users = sqliteTable("users", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeAccountId: text("stripe_account_id"), // tuners only
   hostSubscriptionStatus: text("host_subscription_status"), // 'active' | 'inactive' | 'past_due'
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -24,20 +32,20 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
 /* ---------------- Tuner Listings ---------------- */
-export const tunerListings = sqliteTable("tuner_listings", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const tunerListings = pgTable("tuner_listings", {
+  id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   shopName: text("shop_name").notNull(),
   location: text("location").notNull(),
   bio: text("bio").notNull(),
-  dynoAvailable: integer("dyno_available", { mode: "boolean" }).notNull().default(false),
-  remoteAvailable: integer("remote_available", { mode: "boolean" }).notNull().default(false),
-  supportedMakes: text("supported_makes").notNull(), // JSON text array
+  dynoAvailable: boolean("dyno_available").notNull().default(false),
+  remoteAvailable: boolean("remote_available").notNull().default(false),
+  supportedMakes: jsonb("supported_makes").notNull().$type<string[]>().default([]),
   startingPrice: integer("starting_price").notNull(),
   rating: integer("rating").notNull().default(50), // stored x10 (e.g. 48 = 4.8)
   reviewCount: integer("review_count").notNull().default(0),
   heroImage: text("hero_image"),
-  isVisible: integer("is_visible", { mode: "boolean" }).notNull().default(false),
+  isVisible: boolean("is_visible").notNull().default(false),
 });
 
 export const insertListingSchema = createInsertSchema(tunerListings).omit({
@@ -60,8 +68,8 @@ export const serviceCategories = [
   "race_setup",
 ] as const;
 
-export const services = sqliteTable("services", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const services = pgTable("services", {
+  id: serial("id").primaryKey(),
   listingId: integer("listing_id").notNull(),
   name: text("name").notNull(),
   description: text("description").notNull(),
@@ -74,8 +82,8 @@ export type InsertService = z.infer<typeof insertServiceSchema>;
 export type Service = typeof services.$inferSelect;
 
 /* ---------------- Vehicles ---------------- */
-export const vehicles = sqliteTable("vehicles", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const vehicles = pgTable("vehicles", {
+  id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   year: integer("year").notNull(),
   make: text("make").notNull(),
@@ -97,8 +105,8 @@ export const bookingStatuses = [
   "cancelled",
 ] as const;
 
-export const bookings = sqliteTable("bookings", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const bookings = pgTable("bookings", {
+  id: serial("id").primaryKey(),
   customerId: integer("customer_id").notNull(),
   tunerId: integer("tuner_id").notNull(),
   listingId: integer("listing_id").notNull(),
@@ -108,10 +116,10 @@ export const bookings = sqliteTable("bookings", {
   subtotal: integer("subtotal").notNull(),
   serviceFee: integer("service_fee").notNull(),
   total: integer("total").notNull(),
-  insuranceAcknowledged: integer("insurance_acknowledged", { mode: "boolean" }).notNull().default(false),
-  paid: integer("paid", { mode: "boolean" }).notNull().default(false),
+  insuranceAcknowledged: boolean("insurance_acknowledged").notNull().default(false),
+  paid: boolean("paid").notNull().default(false),
   notes: text("notes").notNull().default(""),
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 // Client submits this shape; server computes fees + total.
@@ -130,15 +138,15 @@ export type CreateBooking = z.infer<typeof createBookingSchema>;
 export type Booking = typeof bookings.$inferSelect;
 
 /* ---------------- Reviews ---------------- */
-export const reviews = sqliteTable("reviews", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const reviews = pgTable("reviews", {
+  id: serial("id").primaryKey(),
   bookingId: integer("booking_id"),
   customerId: integer("customer_id").notNull(),
   listingId: integer("listing_id").notNull(),
   rating: integer("rating").notNull(),
   comment: text("comment").notNull(),
   authorName: text("author_name").notNull().default("Customer"),
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 export const insertReviewSchema = createInsertSchema(reviews).omit({
@@ -149,11 +157,11 @@ export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
 
 /* ---------------- Subscriptions ---------------- */
-export const subscriptions = sqliteTable("subscriptions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const subscriptions = pgTable("subscriptions", {
+  id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   status: text("status").notNull(), // 'active' | 'inactive' | 'past_due'
-  currentPeriodEnd: integer("current_period_end"),
+  currentPeriodEnd: bigint("current_period_end", { mode: "number" }),
   stripeSubscriptionId: text("stripe_subscription_id"),
 });
 export type Subscription = typeof subscriptions.$inferSelect;

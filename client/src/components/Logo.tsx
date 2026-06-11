@@ -17,7 +17,7 @@ export function Logo({ subtitle = true }: { subtitle?: boolean }) {
     <div className="flex items-center gap-3" data-testid="link-logo">
       <LogoMark />
       <div className="leading-tight">
-        <div className="font-display text-lg font-bold tracking-tight">TuneLink</div>
+        <div className="font-display text-lg font-bold tracking-tight">TunersAmerica</div>
         {subtitle && (
           <div className="text-xs text-muted-foreground">Automotive tuner marketplace</div>
         )}

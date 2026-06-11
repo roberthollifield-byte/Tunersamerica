@@ -29,13 +29,17 @@ export const PLATFORMS = [
   { key: "Diesel", label: "Diesel", blurb: "Cummins, Duramax, Power Stroke" },
 ];
 
-export function parseMakes(json: string): string[] {
-  try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) ? v : [];
-  } catch {
-    return [];
+export function parseMakes(json: string | string[] | unknown): string[] {
+  if (Array.isArray(json)) return json as string[];
+  if (typeof json === "string") {
+    try {
+      const v = JSON.parse(json);
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
   }
+  return [];
 }
 
 // Map asset images shipped with the app for seed listings.

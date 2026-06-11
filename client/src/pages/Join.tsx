@@ -25,7 +25,7 @@ export default function Join() {
             <Eyebrow>For tuners</Eyebrow>
             <h1 className="mt-4 font-display text-4xl font-bold md:text-5xl">List your shop. Get matched with the right builds.</h1>
             <p className="mt-4 max-w-xl text-lg text-muted-foreground">
-              TuneLink puts your shop in front of drivers actively searching for your platform and your
+              TunersAmerica puts your shop in front of drivers actively searching for your platform and your
               services — for a flat <span className="font-semibold text-foreground">$99/year</span>.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">

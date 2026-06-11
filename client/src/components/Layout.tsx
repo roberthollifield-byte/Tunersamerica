@@ -148,7 +148,7 @@ function Footer() {
         <div className="max-w-sm">
           <div className="mb-4 flex items-center gap-3">
             <LogoMark className="h-9 w-9" />
-            <div className="font-display font-bold">TuneLink</div>
+            <div className="font-display font-bold">TunersAmerica</div>
           </div>
           <p className="text-sm text-muted-foreground">
             A two-sided marketplace connecting car owners with verified automotive tuners for remote
@@ -170,7 +170,7 @@ function Footer() {
       </div>
       <div className="border-t border-border py-5">
         <div className="mx-auto w-full max-w-[1200px] px-4 text-xs text-muted-foreground">
-          © {new Date().getFullYear()} TuneLink. All rights reserved. Demo marketplace — Stripe and email are stubbed.
+          © {new Date().getFullYear()} TunersAmerica. All rights reserved. Demo marketplace — Stripe and email are stubbed.
         </div>
       </div>
     </footer>
