@@ -12,6 +12,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { money, CATEGORY_LABELS, parseMakes } from "@/lib/format";
+import { PromoRedeemBox } from "@/lib/promo";
 import {
   Store, Wrench, Calendar, DollarSign, CreditCard, Link2,
   Loader2, CheckCircle2, AlertTriangle, Gauge, Wifi,
@@ -229,12 +230,17 @@ export default function TunerDashboard() {
                   <AlertDescription>Your listing is live in the marketplace.</AlertDescription>
                 </Alert>
               ) : (
-                <Button className="mt-4" size="lg" onClick={() => subscribe.mutate()} disabled={subscribe.isPending} data-testid="button-subscribe">
-                  {subscribe.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
-                  Subscribe — $99/year
-                </Button>
+                <>
+                  <Button className="mt-4" size="lg" onClick={() => subscribe.mutate()} disabled={subscribe.isPending} data-testid="button-subscribe">
+                    {subscribe.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                    Subscribe — $99/year
+                  </Button>
+                  <div className="mt-6 border-t pt-6">
+                    <p className="mb-2 text-sm font-medium">Have a promo code?</p>
+                    <PromoRedeemBox audience="tuner" />
+                  </div>
+                </>
               )}
-              <p className="mt-3 text-xs text-muted-foreground">Stripe Checkout is stubbed for the preview. Clicking simulates a successful subscription.</p>
             </Card>
           </TabsContent>
 

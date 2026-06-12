@@ -302,6 +302,183 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ok: true, demoMode: true, passExpiresAt: newExpiry, user: updated });
   });
 
+  /* ---------- Promo codes (app-side) ---------- */
+
+  // Preview a promo code without redeeming. Returns what the code does for the
+  // current user (buyer pass days or tuner trial days), or an error explaining
+  // why it's not usable for them.
+  app.post("/api/promo/preview", async (req: Request, res: Response) => {
+    const token = req.body?.token as string | undefined;
+    const code = (req.body?.code as string | undefined)?.trim();
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+    if (!code) return res.status(400).json({ message: "Missing code" });
+    const user = await storage.getUserByToken(token);
+    if (!user) return res.status(401).json({ message: "Invalid session" });
+
+    const promo = await storage.getPromoCodeByCode(code);
+    if (!promo || !promo.active) {
+      return res.status(404).json({ message: "That code isn't valid" });
+    }
+    if (promo.expiresAt && promo.expiresAt < Date.now()) {
+      return res.status(410).json({ message: "That code has expired" });
+    }
+
+    const role: "buyer" | "tuner" | null =
+      user.role === "customer" ? "buyer" : user.role === "tuner" ? "tuner" : null;
+    if (!role) {
+      return res.status(400).json({ message: "Promo codes don't apply to this account" });
+    }
+
+    const days = role === "buyer" ? promo.buyerPassDays : promo.tunerTrialDays;
+    const cap = role === "buyer" ? promo.buyerMaxRedemptions : promo.tunerMaxRedemptions;
+    const used = role === "buyer" ? promo.buyerRedemptions : promo.tunerRedemptions;
+    if (days <= 0 || cap <= 0) {
+      return res.status(400).json({ message: "That code isn't valid for your account type" });
+    }
+    if (used >= cap) {
+      return res.status(409).json({ message: "That code is fully redeemed" });
+    }
+
+    const existing = await storage.getPromoRedemption(user.id, promo.id, role);
+    if (existing) {
+      return res.status(409).json({ message: "You've already used this code" });
+    }
+    if (promo.firstTimeOnly) {
+      if (role === "buyer" && user.passExpiresAt) {
+        return res.status(409).json({ message: "First-time buyers only" });
+      }
+      if (role === "tuner" && user.hostSubscriptionStatus && user.hostSubscriptionStatus !== "inactive") {
+        return res.status(409).json({ message: "First-time tuners only" });
+      }
+    }
+
+    res.json({
+      ok: true,
+      code: promo.code,
+      role,
+      buyerPassDays: role === "buyer" ? days : 0,
+      tunerTrialDays: role === "tuner" ? days : 0,
+    });
+  });
+
+  // Redeem a promo code. Buyer: grant a free pass instantly. Tuner: create a
+  // Stripe subscription Checkout with trial_period_days so the card is captured
+  // up front but the first charge is delayed.
+  app.post("/api/promo/redeem", async (req: Request, res: Response) => {
+    const token = req.body?.token as string | undefined;
+    const code = (req.body?.code as string | undefined)?.trim();
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+    if (!code) return res.status(400).json({ message: "Missing code" });
+    const user = await storage.getUserByToken(token);
+    if (!user) return res.status(401).json({ message: "Invalid session" });
+
+    const promo = await storage.getPromoCodeByCode(code);
+    if (!promo || !promo.active) {
+      return res.status(404).json({ message: "That code isn't valid" });
+    }
+    if (promo.expiresAt && promo.expiresAt < Date.now()) {
+      return res.status(410).json({ message: "That code has expired" });
+    }
+
+    const role: "buyer" | "tuner" | null =
+      user.role === "customer" ? "buyer" : user.role === "tuner" ? "tuner" : null;
+    if (!role) {
+      return res.status(400).json({ message: "Promo codes don't apply to this account" });
+    }
+
+    const days = role === "buyer" ? promo.buyerPassDays : promo.tunerTrialDays;
+    const cap = role === "buyer" ? promo.buyerMaxRedemptions : promo.tunerMaxRedemptions;
+    const used = role === "buyer" ? promo.buyerRedemptions : promo.tunerRedemptions;
+    if (days <= 0 || cap <= 0) {
+      return res.status(400).json({ message: "That code isn't valid for your account type" });
+    }
+    if (used >= cap) {
+      return res.status(409).json({ message: "That code is fully redeemed" });
+    }
+    const existing = await storage.getPromoRedemption(user.id, promo.id, role);
+    if (existing) {
+      return res.status(409).json({ message: "You've already used this code" });
+    }
+    if (promo.firstTimeOnly) {
+      if (role === "buyer" && user.passExpiresAt) {
+        return res.status(409).json({ message: "First-time buyers only" });
+      }
+      if (role === "tuner" && user.hostSubscriptionStatus && user.hostSubscriptionStatus !== "inactive") {
+        return res.status(409).json({ message: "First-time tuners only" });
+      }
+    }
+
+    if (role === "buyer") {
+      // Grant the free pass immediately, no Stripe charge.
+      const newExpiry = Math.max(user.passExpiresAt || 0, Date.now()) + days * 24 * 60 * 60 * 1000;
+      let updated;
+      try {
+        await storage.redeemPromo(user.id, promo.id, role);
+        updated = await storage.setBuyerPass(user.id, newExpiry);
+      } catch (e: any) {
+        // Likely a unique constraint race on duplicate redemption
+        return res.status(409).json({ message: "You've already used this code" });
+      }
+      return res.json({
+        ok: true,
+        kind: "buyer_pass_granted",
+        passExpiresAt: newExpiry,
+        user: updated,
+      });
+    }
+
+    // Tuner: needs a Stripe subscription with a free trial.
+    const stripe = getStripe();
+    if (!stripe) {
+      // Demo fallback: just mark active for the trial window.
+      const periodEnd = Date.now() + days * 24 * 60 * 60 * 1000;
+      try {
+        await storage.redeemPromo(user.id, promo.id, role);
+        await storage.upsertSubscription(user.id, "active", periodEnd);
+        await storage.setHostSubscription(user.id, "active");
+      } catch (e: any) {
+        return res.status(409).json({ message: "You've already used this code" });
+      }
+      return res.json({ ok: true, kind: "tuner_trial_granted", demoMode: true, currentPeriodEnd: periodEnd });
+    }
+
+    try {
+      // Record the redemption BEFORE creating Checkout so the cap is enforced
+      // even if the user abandons checkout. If they abandon, they've still used
+      // their one shot at FOUNDERS — that's the intended behavior.
+      await storage.redeemPromo(user.id, promo.id, role);
+    } catch (e: any) {
+      return res.status(409).json({ message: "You've already used this code" });
+    }
+
+    try {
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        payment_method_types: ["card"],
+        line_items: [{ price: TUNER_SUB_PRICE_ID, quantity: 1 }],
+        customer_email: user.email,
+        client_reference_id: String(user.id),
+        metadata: { kind: "tuner_sub", userId: String(user.id), promo: promo.code },
+        subscription_data: {
+          trial_period_days: days,
+          metadata: { userId: String(user.id), promo: promo.code },
+        },
+        success_url: `${siteUrl()}/#/dashboard/tuner?sub=success&promo=${encodeURIComponent(promo.code)}`,
+        cancel_url: `${siteUrl()}/#/dashboard/tuner?sub=cancelled`,
+      });
+      return res.json({
+        ok: true,
+        kind: "tuner_trial_checkout",
+        url: session.url,
+        sessionId: session.id,
+        trialDays: days,
+      });
+    } catch (e: any) {
+      console.error("Stripe FOUNDERS trial checkout failed:", e?.message);
+      return res.status(500).json({ message: "Couldn't start checkout", detail: e?.message });
+    }
+  });
+
   /* ---------- Reviews ---------- */
 
   app.post("/api/reviews", async (req: Request, res: Response) => {

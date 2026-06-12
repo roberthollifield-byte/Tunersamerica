@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Lock, Check, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { PromoRedeemBox } from "./promo";
 
 export type PassStatus = {
   active: boolean;
@@ -131,6 +132,10 @@ export function PassPaywall({
         Buy 30-day pass — $10
       </Button>
       <p className="mt-3 text-xs text-muted-foreground">One-time charge. Pass expires after 30 days.</p>
+      <div className="mt-6 border-t pt-6 text-left">
+        <p className="mb-2 text-center text-sm font-medium">Have a promo code?</p>
+        <PromoRedeemBox audience="buyer" />
+      </div>
     </Card>
   );
 }

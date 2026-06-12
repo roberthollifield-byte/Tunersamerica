@@ -6,6 +6,8 @@ import {
   bookings,
   reviews,
   subscriptions,
+  promoCodes,
+  promoRedemptions,
 } from "@shared/schema";
 import type {
   User,
@@ -21,11 +23,13 @@ import type {
   InsertReview,
   Subscription,
   ListingWithDetails,
+  PromoCode,
+  PromoRedemption,
 } from "@shared/schema";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 const pool = new Pool({
@@ -73,6 +77,10 @@ export interface IStorage {
   setHostSubscription(userId: number, status: string): Promise<User | undefined>;
   setStripeAccount(userId: number, accountId: string): Promise<User | undefined>;
   setBuyerPass(userId: number, expiresAt: number): Promise<User | undefined>;
+  // promo codes
+  getPromoCodeByCode(code: string): Promise<PromoCode | undefined>;
+  getPromoRedemption(userId: number, promoCodeId: number, role: string): Promise<PromoRedemption | undefined>;
+  redeemPromo(userId: number, promoCodeId: number, role: "buyer" | "tuner"): Promise<PromoRedemption>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -237,6 +245,54 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     return rows[0];
+  }
+
+  async getPromoCodeByCode(code: string) {
+    const rows = await db
+      .select()
+      .from(promoCodes)
+      .where(sql`upper(${promoCodes.code}) = upper(${code})`);
+    return rows[0];
+  }
+
+  async getPromoRedemption(userId: number, promoCodeId: number, role: string) {
+    const rows = await db
+      .select()
+      .from(promoRedemptions)
+      .where(
+        and(
+          eq(promoRedemptions.userId, userId),
+          eq(promoRedemptions.promoCodeId, promoCodeId),
+          eq(promoRedemptions.role, role),
+        ),
+      );
+    return rows[0];
+  }
+
+  async redeemPromo(userId: number, promoCodeId: number, role: "buyer" | "tuner") {
+    // Insert the redemption (unique constraint blocks double-use)
+    const inserted = await db
+      .insert(promoRedemptions)
+      .values({
+        userId,
+        promoCodeId,
+        role,
+        createdAt: Date.now(),
+      })
+      .returning();
+    // Increment the right counter
+    if (role === "buyer") {
+      await db
+        .update(promoCodes)
+        .set({ buyerRedemptions: sql`${promoCodes.buyerRedemptions} + 1` })
+        .where(eq(promoCodes.id, promoCodeId));
+    } else {
+      await db
+        .update(promoCodes)
+        .set({ tunerRedemptions: sql`${promoCodes.tunerRedemptions} + 1` })
+        .where(eq(promoCodes.id, promoCodeId));
+    }
+    return inserted[0];
   }
 }
 

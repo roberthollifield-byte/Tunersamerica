@@ -168,6 +168,35 @@ export const subscriptions = pgTable("subscriptions", {
 });
 export type Subscription = typeof subscriptions.$inferSelect;
 
+/* ---------------- Promo codes ---------------- */
+export const promoCodes = pgTable("promo_codes", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(), // case-insensitive on lookup
+  // Buyer side: grant a free pass of this many days (0 = disabled for buyers)
+  buyerPassDays: integer("buyer_pass_days").notNull().default(0),
+  buyerMaxRedemptions: integer("buyer_max_redemptions").notNull().default(0),
+  buyerRedemptions: integer("buyer_redemptions").notNull().default(0),
+  // Tuner side: grant this many free trial days on the $99/yr subscription (0 = disabled for tuners)
+  tunerTrialDays: integer("tuner_trial_days").notNull().default(0),
+  tunerMaxRedemptions: integer("tuner_max_redemptions").notNull().default(0),
+  tunerRedemptions: integer("tuner_redemptions").notNull().default(0),
+  // Restrictions
+  firstTimeOnly: boolean("first_time_only").notNull().default(true),
+  expiresAt: bigint("expires_at", { mode: "number" }), // epoch ms; null = never
+  active: boolean("active").notNull().default(true),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+export type PromoCode = typeof promoCodes.$inferSelect;
+
+export const promoRedemptions = pgTable("promo_redemptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  promoCodeId: integer("promo_code_id").notNull(),
+  role: text("role").notNull(), // 'buyer' | 'tuner'
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+export type PromoRedemption = typeof promoRedemptions.$inferSelect;
+
 /* ---------------- Derived view types ---------------- */
 export type ListingWithDetails = TunerListing & {
   services: Service[];
