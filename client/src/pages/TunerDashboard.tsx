@@ -202,7 +202,7 @@ export default function TunerDashboard() {
                 </div>
                 <div className="rounded-lg border border-border p-4">
                   <div className="text-sm text-muted-foreground">Note</div>
-                  <p className="mt-1 text-sm text-muted-foreground">Tuners receive the service subtotal. TunersAmerica's 10% fee is charged on top of the subtotal to the customer.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Tuners receive 100% of the service price. Buyers pay TunersAmerica a separate $10 / 30-day access pass to reach the directory.</p>
                 </div>
               </div>
             </Card>

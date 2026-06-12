@@ -20,6 +20,8 @@ export const users = pgTable("users", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeAccountId: text("stripe_account_id"), // tuners only
   hostSubscriptionStatus: text("host_subscription_status"), // 'active' | 'inactive' | 'past_due'
+  // $10 / 30-day buyer access pass. Epoch ms of expiration; null = never purchased.
+  passExpiresAt: bigint("pass_expires_at", { mode: "number" }),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 

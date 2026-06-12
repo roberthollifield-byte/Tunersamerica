@@ -15,6 +15,13 @@
       "when": 1781060329476,
       "tag": "0001_famous_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781234546135,
+      "tag": "0002_buyer_pass",
+      "breakpoints": true
     }
   ]
 }

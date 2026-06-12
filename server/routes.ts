@@ -11,11 +11,40 @@ import {
 import { z } from "zod";
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+const PASS_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function publicUser(u: any) {
   if (!u) return null;
   // expose token so the demo magic-link / context works in the sandbox iframe
   return u;
+}
+
+function hasActivePass(user: any): boolean {
+  if (!user) return false;
+  if (user.role === "tuner" || user.role === "admin") return true;
+  return typeof user.passExpiresAt === "number" && user.passExpiresAt > Date.now();
+}
+
+async function requireActivePass(req: Request, res: Response): Promise<any | null> {
+  const token = (req.query.token as string | undefined) || (req.body?.token as string | undefined);
+  if (!token) {
+    res.status(402).json({ message: "Buyer pass required", code: "PASS_REQUIRED" });
+    return null;
+  }
+  const user = await storage.getUserByToken(token);
+  if (!user) {
+    res.status(401).json({ message: "Invalid session" });
+    return null;
+  }
+  if (!hasActivePass(user)) {
+    res.status(402).json({
+      message: "Buyer pass required",
+      code: "PASS_REQUIRED",
+      passExpiresAt: user.passExpiresAt ?? null,
+    });
+    return null;
+  }
+  return user;
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -73,12 +102,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   /* ---------- Listings ---------- */
 
-  app.get("/api/listings", async (_req: Request, res: Response) => {
-    // Only subscription-active (isVisible) listings are returned publicly.
+  // Directory + detail are gated behind an active buyer pass.
+  app.get("/api/listings", async (req: Request, res: Response) => {
+    const user = await requireActivePass(req, res);
+    if (!user) return;
     res.json(await storage.getVisibleListingsWithDetails());
   });
 
   app.get("/api/listings/:id", async (req: Request, res: Response) => {
+    const user = await requireActivePass(req, res);
+    if (!user) return;
     const listing = await storage.getListingWithDetails(Number(req.params.id));
     if (!listing) return res.status(404).json({ message: "Listing not found" });
     res.json(listing);
@@ -93,9 +126,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(await storage.getListingWithDetails(listing.id));
   });
 
-  // Also expose /api/tuners as an alias for /api/listings (for Railway health check)
+  // Health-check alias — unauthenticated, returns count only so Railway probes pass.
   app.get("/api/tuners", async (_req: Request, res: Response) => {
-    res.json(await storage.getVisibleListingsWithDetails());
+    const listings = await storage.getVisibleListings();
+    res.json({ count: listings.length, status: "ok" });
   });
 
   app.patch("/api/listings/:id", async (req: Request, res: Response) => {
@@ -144,6 +178,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   /* ---------- Bookings ---------- */
 
   app.post("/api/bookings", async (req: Request, res: Response) => {
+    const user = await requireActivePass(req, res);
+    if (!user) return;
     const parsed = createBookingSchema.safeParse(req.body);
     if (!parsed.success) {
       const msg = parsed.error.errors[0]?.message || "Invalid booking";
@@ -153,10 +189,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const listing = await storage.getListing(data.listingId);
     if (!listing) return res.status(404).json({ message: "Listing not found" });
 
-    // Server-side fee math: serviceFee = round(subtotal * 0.10)
-    const serviceFee = Math.round(data.subtotal * 0.1);
-    const total = data.subtotal + serviceFee;
-
+    // No platform fee — buyer & tuner arrange payment directly. The $10 pass is the only fee.
     const booking = await storage.createBooking({
       customerId: data.customerId,
       tunerId: listing.userId,
@@ -165,8 +198,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       vehicleId: data.vehicleId,
       status: "requested",
       subtotal: data.subtotal,
-      serviceFee,
-      total,
+      serviceFee: 0,
+      total: data.subtotal,
       insuranceAcknowledged: true,
       paid: false,
       notes: data.notes || "",
@@ -211,14 +244,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(updated);
   });
 
-  // STUB: mark booking paid (production = Stripe Checkout / PaymentIntent)
-  app.post("/api/bookings/:id/checkout", async (req: Request, res: Response) => {
-    const updated = await storage.updateBooking(Number(req.params.id), {
-      paid: true,
-      status: "accepted",
+  /* ---------- Buyer access pass ($10 / 30 days) ---------- */
+
+  // GET current pass status for the signed-in buyer.
+  app.get("/api/buyer/pass", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+    const user = await storage.getUserByToken(token);
+    if (!user) return res.status(401).json({ message: "Invalid session" });
+    res.json({
+      active: hasActivePass(user),
+      passExpiresAt: user.passExpiresAt ?? null,
+      role: user.role,
     });
-    if (!updated) return res.status(404).json({ message: "Booking not found" });
-    res.json({ ok: true, demoMode: true, booking: updated });
+  });
+
+  // STUB: $10 / 30-day pass purchase. Production = Stripe Checkout.
+  app.post("/api/buyer/pass/checkout", async (req: Request, res: Response) => {
+    const token = req.body?.token as string | undefined;
+    if (!token) return res.status(401).json({ message: "Unauthorized" });
+    const user = await storage.getUserByToken(token);
+    if (!user) return res.status(401).json({ message: "Invalid session" });
+    const newExpiry = Math.max(user.passExpiresAt || 0, Date.now()) + PASS_MS;
+    const updated = await storage.setBuyerPass(user.id, newExpiry);
+    res.json({
+      ok: true,
+      demoMode: true,
+      passExpiresAt: newExpiry,
+      user: updated,
+    });
   });
 
   /* ---------- Reviews ---------- */

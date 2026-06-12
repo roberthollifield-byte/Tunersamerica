@@ -13,6 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { PLATFORMS, CATEGORY_LABELS, parseMakes, money } from "@/lib/format";
 import { SlidersHorizontal, SearchX } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
+import { usePassGate, PassPaywall } from "@/lib/pass";
 
 function useQueryParams() {
   const [params, setParams] = useState(() => new URLSearchParams(window.location.hash.split("?")[1] || ""));
@@ -26,7 +29,16 @@ function useQueryParams() {
 
 export default function Tuners() {
   const params = useQueryParams();
-  const { data: listings, isLoading } = useQuery<ListingWithDetails[]>({ queryKey: ["/api/listings"] });
+  const { token } = useAuth();
+  const { hasAccess, isLoading: gateLoading } = usePassGate();
+  const { data: listings, isLoading } = useQuery<ListingWithDetails[]>({
+    queryKey: ["/api/listings", token],
+    enabled: hasAccess && !!token,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/listings?token=${encodeURIComponent(token!)}`);
+      return res.json();
+    },
+  });
 
   const [make, setMake] = useState(params.get("make") || "all");
   const [service, setService] = useState(params.get("service") || "all");
@@ -62,10 +74,17 @@ export default function Tuners() {
         <h1 className="mt-4 font-display text-4xl font-bold md:text-5xl">Browse verified tuners.</h1>
         <p className="mt-3 max-w-2xl text-muted-foreground">
           Filter by platform, service type, availability, location, and budget. Only tuners with an active
-          subscription appear here.
+          subscription appear here. Access requires a $10 / 30-day buyer pass.
         </p>
       </Section>
 
+      {!hasAccess && !gateLoading && (
+        <Section className="pt-0">
+          <PassPaywall />
+        </Section>
+      )}
+
+      {hasAccess && (
       <Section className="pt-0">
         <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
           {/* Filters */}
@@ -144,6 +163,7 @@ export default function Tuners() {
           </div>
         </div>
       </Section>
+      )}
     </Layout>
   );
 }

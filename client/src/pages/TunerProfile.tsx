@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
+import { usePassGate, PassPaywall } from "@/lib/pass";
+import { apiRequest } from "@/lib/queryClient";
 import { money, parseMakes, listingImage, CATEGORY_LABELS, rating10 } from "@/lib/format";
 import dyno from "@/assets/hero-dyno.png";
 import ecu from "@/assets/hero-ecu.png";
@@ -17,11 +19,29 @@ import { MapPin, Gauge, Wifi, Star, Check, MessageSquare } from "lucide-react";
 export default function TunerProfile() {
   const [, params] = useRoute("/tuners/:id");
   const [, navigate] = useLocation();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const { hasAccess, isLoading: gateLoading } = usePassGate();
   const id = Number(params?.id);
-  const { data: listing, isLoading } = useQuery<ListingWithDetails>({ queryKey: ["/api/listings", id] });
+  const { data: listing, isLoading } = useQuery<ListingWithDetails>({
+    queryKey: ["/api/listings", id, token],
+    enabled: hasAccess && !!token && !!id,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/listings/${id}?token=${encodeURIComponent(token!)}`);
+      return res.json();
+    },
+  });
 
-  if (isLoading) {
+  if (!hasAccess && !gateLoading) {
+    return (
+      <Layout>
+        <Section className="py-16">
+          <PassPaywall />
+        </Section>
+      </Layout>
+    );
+  }
+
+  if (isLoading || gateLoading) {
     return (
       <Layout>
         <Section>
@@ -134,7 +154,7 @@ export default function TunerProfile() {
             <Card className="p-6 lg:sticky lg:top-24">
               <div className="text-sm text-muted-foreground">Starting from</div>
               <div className="font-display text-3xl font-bold" data-testid="text-starting-price">{money(listing.startingPrice)}</div>
-              <div className="mt-1 text-xs text-muted-foreground">A 10% service fee applies at checkout.</div>
+              <div className="mt-1 text-xs text-muted-foreground">No platform fee. Tuners keep 100%.</div>
               <Button className="mt-5 w-full" size="lg" onClick={startBooking} data-testid="button-book-service">Book service</Button>
               <Button variant="outline" className="mt-2 w-full" onClick={startBooking} data-testid="button-request-quote">
                 <MessageSquare className="mr-2 h-4 w-4" /> Request a quote

@@ -7,7 +7,7 @@ import { Car, Wrench } from "lucide-react";
 const DRIVER = [
   { t: "Tell us about your build", d: "Enter your vehicle, current modifications, fuel type, and what you want to improve." },
   { t: "Compare specialists", d: "Filter tuners by platform, service type, location, and remote or in-person availability." },
-  { t: "Book & acknowledge terms", d: "Pick a service, review the price and 10% service fee, accept the insurance acknowledgment, and confirm." },
+  { t: "Book & acknowledge terms", d: "Buy your $10 / 30-day buyer pass, pick a service, accept the insurance acknowledgment, and send the request. Tuners keep 100%." },
 ];
 const TUNER = [
   { t: "Create your listing", d: "Add your shop, supported makes, services, pricing, and whether you offer dyno or remote work." },

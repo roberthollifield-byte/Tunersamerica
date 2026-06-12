@@ -72,6 +72,7 @@ export interface IStorage {
   upsertSubscription(userId: number, status: string, currentPeriodEnd: number): Promise<Subscription>;
   setHostSubscription(userId: number, status: string): Promise<User | undefined>;
   setStripeAccount(userId: number, accountId: string): Promise<User | undefined>;
+  setBuyerPass(userId: number, expiresAt: number): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -224,6 +225,15 @@ export class DatabaseStorage implements IStorage {
     const rows = await db
       .update(users)
       .set({ stripeAccountId: accountId })
+      .where(eq(users.id, userId))
+      .returning();
+    return rows[0];
+  }
+
+  async setBuyerPass(userId: number, expiresAt: number) {
+    const rows = await db
+      .update(users)
+      .set({ passExpiresAt: expiresAt })
       .where(eq(users.id, userId))
       .returning();
     return rows[0];
@@ -493,7 +503,6 @@ async function seed() {
 
   // A sample booking for customer 1 with Apex (listing 1, service 2 = remote)
   const sub = 450;
-  const fee = Math.round(sub * 0.1);
   await storage.createBooking({
     customerId: cust1.id,
     tunerId: tunerUserIds[0],
@@ -502,8 +511,8 @@ async function seed() {
     vehicleId: 1,
     status: "accepted",
     subtotal: sub,
-    serviceFee: fee,
-    total: sub + fee,
+    serviceFee: 0,
+    total: sub,
     insuranceAcknowledged: true,
     paid: true,
     notes: "Looking to refine part-throttle drivability on 93 octane.",

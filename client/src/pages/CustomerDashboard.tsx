@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Vehicle } from "@shared/schema";
 import { Layout, Section } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { usePassStatus, formatPassRemaining } from "@/lib/pass";
+import { useToast } from "@/hooks/use-toast";
+import { Lock, Check, Sparkles } from "lucide-react";
 import { money } from "@/lib/format";
 import { Car, Calendar, MessageSquare, Plus, Loader2 } from "lucide-react";
 
@@ -64,6 +67,8 @@ export default function CustomerDashboard() {
           </div>
           <Button onClick={() => navigate("/tuners")} data-testid="button-dash-find">Find a Tuner</Button>
         </div>
+
+        <PassStatusCard />
 
         <Tabs defaultValue="vehicles" className="mt-8">
           <TabsList>
@@ -140,5 +145,52 @@ export default function CustomerDashboard() {
         </Tabs>
       </Section>
     </Layout>
+  );
+}
+
+function PassStatusCard() {
+  const { token } = useAuth();
+  const { data: pass } = usePassStatus();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const buy = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/buyer/pass/checkout", { token });
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/buyer/pass"] });
+      qc.invalidateQueries({ queryKey: ["/api/listings"] });
+      toast({ title: "Pass active", description: "You now have 30 days of directory access." });
+    },
+    onError: (e: any) =>
+      toast({ title: "Couldn't purchase pass", description: e.message, variant: "destructive" }),
+  });
+
+  const active = !!pass?.active;
+  return (
+    <Card className="mt-6 flex flex-wrap items-center justify-between gap-4 p-5">
+      <div className="flex items-center gap-3">
+        <div className={`grid h-10 w-10 place-items-center rounded-full ${active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
+          {active ? <Sparkles className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
+        </div>
+        <div>
+          <div className="font-display text-base font-bold">Buyer access pass</div>
+          <div className="text-sm text-muted-foreground" data-testid="text-pass-status">
+            {active ? formatPassRemaining(pass?.passExpiresAt ?? null) : "No active pass — $10 for 30 days of directory access"}
+          </div>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant={active ? "outline" : "default"}
+        onClick={() => buy.mutate()}
+        disabled={buy.isPending}
+        data-testid="button-dash-buy-pass"
+      >
+        {buy.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : active ? <Check className="mr-2 h-4 w-4" /> : null}
+        {active ? "Extend 30 days — $10" : "Buy 30-day pass — $10"}
+      </Button>
+    </Card>
   );
 }

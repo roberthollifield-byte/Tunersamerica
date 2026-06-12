@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "pass_expires_at" bigint;

@@ -60,7 +60,7 @@ export default function Join() {
               <span className="pb-1 text-muted-foreground">/ year</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Your listing stays visible while your subscription is active. A 10% customer service fee is added at booking checkout.
+              Your listing stays visible while your subscription is active. You keep 100% of every service price — buyers pay a separate $10 / 30-day access pass.
             </p>
             <Button className="mt-5 w-full" size="lg" onClick={() => navigate("/signin?role=tuner")} data-testid="button-join-start">Get started</Button>
             <p className="mt-3 text-center text-xs text-muted-foreground">No charge in demo mode — Stripe is stubbed.</p>

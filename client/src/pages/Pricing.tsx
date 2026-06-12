@@ -13,7 +13,7 @@ export default function Pricing() {
         <Eyebrow>Pricing</Eyebrow>
         <h1 className="mx-auto mt-4 max-w-3xl font-display text-4xl font-bold md:text-5xl">Simple, transparent pricing.</h1>
         <p className="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
-          Tuners pay a flat annual subscription to list. Drivers pay a small service fee at checkout. No hidden costs.
+          Tuners pay a flat annual subscription to list. Drivers pay $10 for a 30-day access pass. No platform fee on bookings — tuners keep 100% of their service price.
         </p>
       </Section>
 
@@ -38,13 +38,13 @@ export default function Pricing() {
           {/* Drivers */}
           <Card className="p-8">
             <Badge variant="secondary">For drivers</Badge>
-            <h2 className="mt-4 font-display text-xl font-bold">Booking service fee</h2>
+            <h2 className="mt-4 font-display text-xl font-bold">30-day buyer pass</h2>
             <div className="mt-3 flex items-end gap-1">
-              <span className="font-display text-5xl font-bold">10%</span>
-              <span className="pb-2 text-muted-foreground">per booking</span>
+              <span className="font-display text-5xl font-bold">$10</span>
+              <span className="pb-2 text-muted-foreground">/ 30 days</span>
             </div>
             <ul className="mt-6 space-y-3 text-sm text-muted-foreground">
-              {["Free to browse and compare tuners", "10% service fee added at checkout", "Service price set by the tuner", "Insurance acknowledgment at booking", "Transparent subtotal + fee + total"].map((f) => (
+              {["Browse every verified tuner for 30 days", "Send unlimited booking requests", "No platform fee — tuners keep 100%", "Service price set by the tuner", "Payment arranged directly with the tuner"].map((f) => (
                 <li key={f} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> {f}</li>
               ))}
             </ul>
@@ -53,11 +53,12 @@ export default function Pricing() {
         </div>
 
         <Card className="mx-auto mt-8 max-w-4xl p-6">
-          <h3 className="font-semibold">Example booking math</h3>
+          <h3 className="font-semibold">Example: a $450 remote tune</h3>
           <div className="mt-3 max-w-sm space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Service subtotal</span><span>$450</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Service fee (10%)</span><span>$45</span></div>
-            <div className="flex justify-between border-t border-border pt-1 font-semibold"><span>Total</span><span>$495</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Buyer pass (30 days)</span><span>$10</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Service price (paid to tuner)</span><span>$450</span></div>
+            <div className="flex justify-between border-t border-border pt-1 font-semibold"><span>Total out of pocket</span><span>$460</span></div>
+            <div className="pt-2 text-xs text-muted-foreground">Tuner receives the full $450. TunersAmerica takes no cut of the service.</div>
           </div>
         </Card>
       </Section>

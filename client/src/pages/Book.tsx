@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { usePassGate, PassPaywall } from "@/lib/pass";
 import { useToast } from "@/hooks/use-toast";
 import { money, CATEGORY_LABELS } from "@/lib/format";
 import { Check, ShieldAlert, Loader2, ArrowRight, PartyPopper } from "lucide-react";
@@ -21,11 +22,19 @@ import { Check, ShieldAlert, Loader2, ArrowRight, PartyPopper } from "lucide-rea
 export default function Book() {
   const [, params] = useRoute("/book/:id");
   const [, navigate] = useLocation();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const { hasAccess, isLoading: gateLoading } = usePassGate();
   const { toast } = useToast();
   const id = Number(params?.id);
 
-  const { data: listing, isLoading } = useQuery<ListingWithDetails>({ queryKey: ["/api/listings", id] });
+  const { data: listing, isLoading } = useQuery<ListingWithDetails>({
+    queryKey: ["/api/listings", id, token],
+    enabled: hasAccess && !!token && !!id,
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/listings/${id}?token=${encodeURIComponent(token!)}`);
+      return res.json();
+    },
+  });
   const { data: vehicles } = useQuery<Vehicle[]>({
     queryKey: ["/api/vehicles", user?.id],
     queryFn: async () => (await apiRequest("GET", `/api/vehicles?userId=${user!.id}`)).json(),
@@ -46,8 +55,8 @@ export default function Book() {
 
   const selectedService = listing?.services.find((s) => String(s.id) === serviceId);
   const subtotal = selectedService?.price ?? listing?.startingPrice ?? 0;
-  const fee = Math.round(subtotal * 0.1);
-  const total = subtotal + fee;
+  // No platform fee — buyer & tuner arrange payment directly.
+  const total = subtotal;
 
   const createVehicle = useMutation({
     mutationFn: async () => {
@@ -78,6 +87,7 @@ export default function Book() {
         subtotal,
         insuranceAcknowledged: true,
         notes: goals,
+        token,
       });
       return res.json();
     },
@@ -96,7 +106,10 @@ export default function Book() {
       </Card></Section></Layout>
     );
   }
-  if (isLoading) return <Layout><Section><Skeleton className="h-96 w-full" /></Section></Layout>;
+  if (!hasAccess && !gateLoading) {
+    return <Layout><Section className="py-16"><PassPaywall /></Section></Layout>;
+  }
+  if (isLoading || gateLoading) return <Layout><Section><Skeleton className="h-96 w-full" /></Section></Layout>;
   if (!listing) return <Layout><Section><h1 className="font-display text-2xl font-bold">Tuner not found</h1></Section></Layout>;
 
   if (done) {
@@ -106,7 +119,7 @@ export default function Book() {
           <div className="grid h-16 w-16 place-items-center rounded-full bg-primary/15 text-primary"><PartyPopper className="h-8 w-8" /></div>
           <h1 className="mt-5 font-display text-3xl font-bold">Booking confirmed</h1>
           <p className="mt-2 max-w-md text-muted-foreground">
-            Your request was sent to <span className="font-medium text-foreground">{listing.shopName}</span>. Total {money(done.total)} (incl. 10% service fee).
+            Your request was sent to <span className="font-medium text-foreground">{listing.shopName}</span>. Service total {money(done.total)} — the tuner will follow up to arrange payment directly.
           </p>
           <div className="mt-6 flex gap-3">
             <Button onClick={() => navigate("/dashboard/customer")} data-testid="button-view-bookings">View my bookings</Button>
@@ -190,9 +203,10 @@ export default function Book() {
               <h2 className="font-display text-lg font-bold">Review & confirm</h2>
               <div className="mt-4 space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Service</span><span className="text-right font-medium">{selectedService?.name ?? "Starting service"}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span data-testid="text-subtotal">{money(subtotal)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Service fee (10%)</span><span data-testid="text-service-fee">{money(fee)}</span></div>
-                <div className="flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span data-testid="text-total">{money(total)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Service price</span><span data-testid="text-subtotal">{money(subtotal)}</span></div>
+                <div className="flex justify-between text-xs text-muted-foreground"><span>Platform fee</span><span data-testid="text-service-fee">$0 (paid via $10 pass)</span></div>
+                <div className="flex justify-between border-t border-border pt-2 text-base font-bold"><span>You owe the tuner</span><span data-testid="text-total">{money(total)}</span></div>
+                <p className="pt-1 text-xs text-muted-foreground">Payment is arranged directly with the tuner after they accept your request.</p>
               </div>
 
               <div className="mt-5 flex items-start gap-2 rounded-md border border-border bg-muted/30 p-3">

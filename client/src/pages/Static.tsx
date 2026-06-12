@@ -42,7 +42,7 @@ export function Terms() {
   return (
     <Page eyebrow="Terms" title="Terms of Service">
       <p><strong>Placeholder terms.</strong> This page is a placeholder for the TunersAmerica demo.</p>
-      <p>In production these terms would cover marketplace conduct, the $99/year host subscription, the 10% customer service fee, booking and cancellation policies, and the insurance acknowledgment required before any booking is confirmed.</p>
+      <p>In production these terms would cover marketplace conduct, the $99/year host subscription, the $10 / 30-day buyer access pass, booking and cancellation policies, and the insurance acknowledgment required before any booking is confirmed.</p>
       <p>Tuning modifies vehicle behavior. Drivers acknowledge associated risks and insurance considerations before each booking.</p>
     </Page>
   );
