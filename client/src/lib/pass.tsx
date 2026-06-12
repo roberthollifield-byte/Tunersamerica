@@ -55,7 +55,13 @@ export function PassPaywall({
       const res = await apiRequest("POST", "/api/buyer/pass/checkout", { token });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // Live Stripe path — redirect to Stripe Checkout.
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      // Demo path — instant grant.
       qc.invalidateQueries({ queryKey: ["/api/buyer/pass"] });
       qc.invalidateQueries({ queryKey: ["/api/listings"] });
       setTick((t) => t + 1);

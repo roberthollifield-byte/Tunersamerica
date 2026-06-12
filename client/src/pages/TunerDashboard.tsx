@@ -48,9 +48,13 @@ export default function TunerDashboard() {
 
   const subscribe = useMutation({
     mutationFn: async () => (await apiRequest("POST", "/api/stripe/subscribe", { token })).json(),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
       queryClient.invalidateQueries();
-      toast({ title: "Subscription active (demo)", description: "Your listing is now visible to drivers." });
+      toast({ title: "Subscription active", description: "Your listing is now visible to drivers." });
     },
   });
   const connect = useMutation({

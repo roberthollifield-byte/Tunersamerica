@@ -9,6 +9,15 @@ import {
   insertReviewSchema,
 } from "@shared/schema";
 import { z } from "zod";
+import {
+  getStripe,
+  stripeEnabled,
+  publishableKey,
+  webhookSecret,
+  siteUrl,
+  BUYER_PASS_PRICE_ID,
+  TUNER_SUB_PRICE_ID,
+} from "./stripe";
 
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 const PASS_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -259,20 +268,38 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   });
 
-  // STUB: $10 / 30-day pass purchase. Production = Stripe Checkout.
+  // $10 / 30-day pass purchase. Live Stripe Checkout when STRIPE_SECRET_KEY is set,
+  // otherwise grants the pass instantly (demo / local dev).
   app.post("/api/buyer/pass/checkout", async (req: Request, res: Response) => {
     const token = req.body?.token as string | undefined;
     if (!token) return res.status(401).json({ message: "Unauthorized" });
     const user = await storage.getUserByToken(token);
     if (!user) return res.status(401).json({ message: "Invalid session" });
+
+    const stripe = getStripe();
+    if (stripe) {
+      try {
+        const session = await stripe.checkout.sessions.create({
+          mode: "payment",
+          payment_method_types: ["card"],
+          line_items: [{ price: BUYER_PASS_PRICE_ID, quantity: 1 }],
+          customer_email: user.email,
+          client_reference_id: String(user.id),
+          metadata: { kind: "buyer_pass", userId: String(user.id) },
+          success_url: `${siteUrl()}/#/account?pass=success`,
+          cancel_url: `${siteUrl()}/#/tuners?pass=cancelled`,
+        });
+        return res.json({ ok: true, url: session.url, sessionId: session.id });
+      } catch (e: any) {
+        console.error("Stripe pass checkout failed:", e?.message);
+        return res.status(500).json({ message: "Couldn't start checkout", detail: e?.message });
+      }
+    }
+
+    // Fallback: instant grant (no Stripe configured)
     const newExpiry = Math.max(user.passExpiresAt || 0, Date.now()) + PASS_MS;
     const updated = await storage.setBuyerPass(user.id, newExpiry);
-    res.json({
-      ok: true,
-      demoMode: true,
-      passExpiresAt: newExpiry,
-      user: updated,
-    });
+    res.json({ ok: true, demoMode: true, passExpiresAt: newExpiry, user: updated });
   });
 
   /* ---------- Reviews ---------- */
@@ -283,26 +310,135 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(await storage.createReview(parsed.data));
   });
 
-  /* ---------- Stripe stubs (demo mode) ---------- */
+  /* ---------- Stripe ---------- */
 
-  // Host subscription: $99/year
+  // Public config for the frontend (publishable key + whether live).
+  app.get("/api/stripe/config", (_req: Request, res: Response) => {
+    res.json({ enabled: stripeEnabled(), publishableKey: publishableKey() });
+  });
+
+  // Host subscription: $99/year — live Checkout when configured, instant grant in demo.
   app.post("/api/stripe/subscribe", async (req: Request, res: Response) => {
     const token = req.body?.token as string | undefined;
     const user = token ? await storage.getUserByToken(token) : undefined;
     if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+    const stripe = getStripe();
+    if (stripe) {
+      try {
+        const session = await stripe.checkout.sessions.create({
+          mode: "subscription",
+          payment_method_types: ["card"],
+          line_items: [{ price: TUNER_SUB_PRICE_ID, quantity: 1 }],
+          customer_email: user.email,
+          client_reference_id: String(user.id),
+          metadata: { kind: "tuner_sub", userId: String(user.id) },
+          subscription_data: { metadata: { userId: String(user.id) } },
+          success_url: `${siteUrl()}/#/dashboard/tuner?sub=success`,
+          cancel_url: `${siteUrl()}/#/dashboard/tuner?sub=cancelled`,
+        });
+        return res.json({ ok: true, url: session.url, sessionId: session.id });
+      } catch (e: any) {
+        console.error("Stripe subscribe failed:", e?.message);
+        return res.status(500).json({ message: "Couldn't start subscription", detail: e?.message });
+      }
+    }
+
+    // Fallback: instant grant
     const periodEnd = Date.now() + YEAR_MS;
     await storage.upsertSubscription(user.id, "active", periodEnd);
     const updated = await storage.setHostSubscription(user.id, "active");
     res.json({ ok: true, demoMode: true, currentPeriodEnd: periodEnd, user: updated });
   });
 
-  // Stripe Connect onboarding
+  // Stripe Connect onboarding (still stubbed — not on the critical path right now).
   app.post("/api/stripe/connect/onboard", async (req: Request, res: Response) => {
     const token = req.body?.token as string | undefined;
     const user = token ? await storage.getUserByToken(token) : undefined;
     if (!user) return res.status(401).json({ message: "Unauthorized" });
     const updated = await storage.setStripeAccount(user.id, `acct_mock_${user.id}`);
     res.json({ ok: true, demoMode: true, stripeAccountId: updated?.stripeAccountId, user: updated });
+  });
+
+  /* ---------- Stripe webhook ---------- */
+
+  // Receives events from Stripe. Mounted at /api/stripe/webhook. Stripe sends JSON
+  // but we need the raw bytes for signature verification — server/index.ts already
+  // captures req.rawBody for every request via express.json verify hook.
+  app.post("/api/stripe/webhook", async (req: Request, res: Response) => {
+    const stripe = getStripe();
+    const secret = webhookSecret();
+    if (!stripe) return res.status(503).json({ message: "Stripe not configured" });
+    if (!secret) return res.status(503).json({ message: "Webhook secret missing" });
+
+    const sig = req.headers["stripe-signature"] as string | undefined;
+    const raw = (req as any).rawBody as Buffer | undefined;
+    if (!sig || !raw) return res.status(400).json({ message: "Missing signature/body" });
+
+    let event: any;
+    try {
+      event = stripe.webhooks.constructEvent(raw, sig, secret);
+    } catch (err: any) {
+      console.error("Webhook signature verification failed:", err?.message);
+      return res.status(400).send(`Webhook Error: ${err?.message}`);
+    }
+
+    try {
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object;
+          const userId = Number(session.metadata?.userId || session.client_reference_id);
+          const kind = session.metadata?.kind;
+          if (!userId) break;
+
+          if (kind === "buyer_pass") {
+            // Find existing pass and extend, or set fresh 30 days from now.
+            const user = await storage.getUser(userId);
+            const current = user?.passExpiresAt || 0;
+            const newExpiry = Math.max(current, Date.now()) + PASS_MS;
+            await storage.setBuyerPass(userId, newExpiry);
+            // Save Stripe customer id if we got one.
+            // (Optional — ignore failure.)
+          }
+
+          if (kind === "tuner_sub") {
+            const periodEnd = Date.now() + YEAR_MS; // refined below by invoice.paid
+            await storage.upsertSubscription(userId, "active", periodEnd);
+            await storage.setHostSubscription(userId, "active");
+          }
+          break;
+        }
+
+        case "invoice.paid":
+        case "invoice.payment_succeeded": {
+          const invoice = event.data.object;
+          const userIdRaw = invoice.subscription_details?.metadata?.userId || invoice.metadata?.userId;
+          const userId = userIdRaw ? Number(userIdRaw) : null;
+          if (userId && invoice.period_end) {
+            const periodEnd = invoice.period_end * 1000;
+            await storage.upsertSubscription(userId, "active", periodEnd);
+            await storage.setHostSubscription(userId, "active");
+          }
+          break;
+        }
+
+        case "customer.subscription.deleted":
+        case "customer.subscription.paused": {
+          const sub = event.data.object;
+          const userId = sub.metadata?.userId ? Number(sub.metadata.userId) : null;
+          if (userId) await storage.setHostSubscription(userId, "inactive");
+          break;
+        }
+
+        default:
+          // ignore other events
+          break;
+      }
+      res.json({ received: true });
+    } catch (err: any) {
+      console.error("Webhook handler error:", err?.message);
+      res.status(500).json({ message: "Webhook handler error" });
+    }
   });
 
   return httpServer;

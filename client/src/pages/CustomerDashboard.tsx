@@ -158,7 +158,11 @@ function PassStatusCard() {
       const res = await apiRequest("POST", "/api/buyer/pass/checkout", { token });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
       qc.invalidateQueries({ queryKey: ["/api/buyer/pass"] });
       qc.invalidateQueries({ queryKey: ["/api/listings"] });
       toast({ title: "Pass active", description: "You now have 30 days of directory access." });
