@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import type { Server } from "node:http";
 import { storage } from "./storage";
+import { sendMagicLinkEmail, emailEnabled } from "./email";
 import {
   createBookingSchema,
   insertVehicleSchema,
@@ -41,10 +42,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         hostSubscriptionStatus: parsed.data.role === "tuner" ? "inactive" : null,
       } as any);
     }
-    // STUB: production would email this link via Resend.
-    const link = `#/auth/callback?token=${user.token}`;
-    console.log(`[magic-link] (stubbed email) for ${user.email}: ${link}`);
-    res.json({ ok: true, link, token: user.token, emailStubbed: true });
+    const result = await sendMagicLinkEmail({
+      to: user.email,
+      name: user.name,
+      token: user.token,
+      role: user.role,
+    });
+    if (emailEnabled && result.sent) {
+      // Production: never leak the token back to the client.
+      return res.json({ ok: true, emailStubbed: false });
+    }
+    // Dev / unconfigured fallback: surface the link so local sign-in still works.
+    return res.json({
+      ok: true,
+      link: result.link,
+      token: user.token,
+      emailStubbed: true,
+      error: result.sent ? undefined : (result as any).error,
+    });
   });
 
   // Resolve a session from a token (used by React auth context).

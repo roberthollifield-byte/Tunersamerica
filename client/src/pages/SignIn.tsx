@@ -29,7 +29,7 @@ export default function SignIn() {
   const [, navigate] = useLocation();
   const { loginWithToken } = useAuth();
   const [role, setRole] = useState<"customer" | "tuner">(getParam("role") === "tuner" ? "tuner" : "customer");
-  const [sent, setSent] = useState<{ link: string; token: string } | null>(null);
+  const [sent, setSent] = useState<{ link?: string; token?: string; emailStubbed: boolean; email: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const redirect = getParam("redirect");
 
@@ -40,14 +40,19 @@ export default function SignIn() {
     try {
       const res = await apiRequest("POST", "/api/auth/magic-link", { ...values, role });
       const data = await res.json();
-      setSent({ link: data.link, token: data.token });
+      setSent({
+        link: data.link,
+        token: data.token,
+        emailStubbed: !!data.emailStubbed,
+        email: values.email,
+      });
     } finally {
       setLoading(false);
     }
   }
 
   async function continueWithLink() {
-    if (!sent) return;
+    if (!sent || !sent.token) return;
     const user = await loginWithToken(sent.token);
     if (user) {
       if (redirect) navigate(redirect);
@@ -56,11 +61,13 @@ export default function SignIn() {
   }
 
   // One-click demo sign-in: request a magic link, log in, and route to the dashboard.
+  // Only available in demo mode (when the API returns the token instead of emailing).
   async function signInAsSeed(email: string, seedRole: "customer" | "tuner") {
     setLoading(true);
     try {
       const res = await apiRequest("POST", "/api/auth/magic-link", { email, role: seedRole });
       const data = await res.json();
+      if (!data.emailStubbed || !data.token) return; // disabled in production
       const user = await loginWithToken(data.token);
       if (user) navigate(user.role === "tuner" ? "/dashboard/tuner" : "/dashboard/customer");
     } finally {
@@ -72,6 +79,11 @@ export default function SignIn() {
     { label: "Seeded tuner — Apex Calibrations (active subscription)", email: "tuner@apexcal.com", role: "tuner" as const },
     { label: "Seeded customer — Sam Okafor (has a vehicle + booking)", email: "driver@tunersamerica.com", role: "customer" as const },
   ];
+
+  // Hide the demo accounts panel in production (when sending real email).
+  // We learn that asynchronously from the sign-in response, so this just hides it
+  // once any send returns emailStubbed:false.
+  const isProd = sent?.emailStubbed === false;
 
   return (
     <Layout>
@@ -113,13 +125,13 @@ export default function SignIn() {
                 </Button>
               </form>
             </Form>
-          ) : (
+          ) : sent.emailStubbed ? (
             <div className="mt-6 space-y-4">
               <Alert>
                 <MailCheck className="h-4 w-4" />
-                <AlertTitle>Magic link ready</AlertTitle>
+                <AlertTitle>Magic link ready (demo)</AlertTitle>
                 <AlertDescription>
-                  In production this is emailed via Resend. For the demo, click below to sign in.
+                  Email isn't configured in this environment. Click below to sign in.
                 </AlertDescription>
               </Alert>
               <div className="rounded-md border border-border bg-muted/40 p-3 font-mono text-xs break-all text-muted-foreground" data-testid="text-magic-link">
@@ -130,27 +142,40 @@ export default function SignIn() {
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => setSent(null)} data-testid="button-use-different-email">Use a different email</Button>
             </div>
+          ) : (
+            <div className="mt-6 space-y-4">
+              <Alert>
+                <MailCheck className="h-4 w-4" />
+                <AlertTitle>Check your inbox</AlertTitle>
+                <AlertDescription>
+                  We just sent a sign-in link to <span className="font-medium text-foreground">{sent.email}</span>. The link expires in 30 minutes.
+                </AlertDescription>
+              </Alert>
+              <Button variant="ghost" className="w-full" onClick={() => setSent(null)} data-testid="button-use-different-email">Use a different email</Button>
+            </div>
           )}
 
-          <div className="mt-7 border-t border-border pt-5">
-            <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Info className="h-3.5 w-3.5" /> Demo accounts (one click)
+          {!isProd && (
+            <div className="mt-7 border-t border-border pt-5">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Info className="h-3.5 w-3.5" /> Demo accounts (one click — dev only)
+              </div>
+              <div className="space-y-2">
+                {seeds.map((s) => (
+                  <button
+                    key={s.email}
+                    className="w-full rounded-md border border-border p-2.5 text-left text-xs hover-elevate"
+                    data-testid={`button-seed-${s.email}`}
+                    disabled={loading}
+                    onClick={() => signInAsSeed(s.email, s.role)}
+                  >
+                    <div className="font-medium text-foreground">{s.label}</div>
+                    <div className="font-mono text-muted-foreground">{s.email}</div>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              {seeds.map((s) => (
-                <button
-                  key={s.email}
-                  className="w-full rounded-md border border-border p-2.5 text-left text-xs hover-elevate"
-                  data-testid={`button-seed-${s.email}`}
-                  disabled={loading}
-                  onClick={() => signInAsSeed(s.email, s.role)}
-                >
-                  <div className="font-medium text-foreground">{s.label}</div>
-                  <div className="font-mono text-muted-foreground">{s.email}</div>
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
         </Card>
       </Section>
     </Layout>
