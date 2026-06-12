@@ -1,5 +1,19 @@
 import { Switch, Route, Router } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
+import { useHashLocation as useHashLocationOriginal } from "wouter/use-hash-location";
+import { useCallback } from "react";
+
+// Wrap wouter's hash location hook so query strings (e.g. magic-link tokens)
+// in the hash don't break route matching. Without this, '#/auth/callback?token=...'
+// fails to match the '/auth/callback' route and falls through to NotFound.
+function useHashLocation(): [string, (path: string, opts?: any) => void] {
+  const [loc, navigate] = useHashLocationOriginal();
+  const cleanLoc = loc.split("?")[0] || "/";
+  const wrappedNavigate = useCallback(
+    (path: string, opts?: any) => navigate(path, opts),
+    [navigate],
+  );
+  return [cleanLoc, wrappedNavigate];
+}
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
