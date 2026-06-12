@@ -13,12 +13,12 @@ const SECRET = process.env.STRIPE_SECRET_KEY;
 const PUBLISHABLE = process.env.STRIPE_PUBLISHABLE_KEY;
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
-// Default to the live price IDs created via the Stripe MCP on 2026-06-12.
-// Overridable via env if you ever rotate to new prices.
+// Default to the live price IDs created in the Rents America Stripe account
+// (acct_1TgR83RgVosLc3T2) on 2026-06-12. Overridable via env.
 export const BUYER_PASS_PRICE_ID =
-  process.env.STRIPE_BUYER_PASS_PRICE_ID || "price_1ThTOcRgVosLc3T2q21qBj6d";
+  process.env.STRIPE_BUYER_PASS_PRICE_ID || "price_1Thcp8RgVosLc3T2hxlydSp0";
 export const TUNER_SUB_PRICE_ID =
-  process.env.STRIPE_TUNER_SUB_PRICE_ID || "price_1ThTOzRgVosLc3T2AHL15gpt";
+  process.env.STRIPE_TUNER_SUB_PRICE_ID || "price_1Thcp8RgVosLc3T27SIdThnT";
 
 let _stripe: Stripe | null = null;
 
