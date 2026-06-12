@@ -22,6 +22,13 @@
       "when": 1781234546135,
       "tag": "0002_buyer_pass",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781306463823,
+      "tag": "0003_promo_codes",
+      "breakpoints": true
     }
   ]
 }
