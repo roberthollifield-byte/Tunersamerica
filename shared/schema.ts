@@ -16,7 +16,12 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   role: text("role").notNull(), // 'tuner' | 'customer' | 'admin'
-  token: text("token").notNull(), // magic-link session token
+  token: text("token").notNull(), // session token (returned on login/register)
+  passwordHash: text("password_hash"), // bcrypt; null means user pre-dates password auth
+  emailVerified: boolean("email_verified").notNull().default(false),
+  emailVerifyToken: text("email_verify_token"), // one-time token sent in verification email
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpiresAt: bigint("password_reset_expires_at", { mode: "number" }),
   stripeCustomerId: text("stripe_customer_id"),
   stripeAccountId: text("stripe_account_id"), // tuners only
   hostSubscriptionStatus: text("host_subscription_status"), // 'active' | 'inactive' | 'past_due'

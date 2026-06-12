@@ -8,6 +8,95 @@ const resend = apiKey ? new Resend(apiKey) : null;
 
 export const emailEnabled = !!resend;
 
+// Shared HTML shell so all emails look consistent.
+function renderEmail(opts: { name?: string | null; intro: string; ctaLabel: string; ctaUrl: string; footer?: string }) {
+  const greeting = opts.name ? `Hi ${opts.name},` : "Hi,";
+  const text = [
+    greeting,
+    "",
+    opts.intro,
+    opts.ctaUrl,
+    "",
+    opts.footer || "If you didn't request this email, you can safely ignore it.",
+    "",
+    "— The TunersAmerica team",
+  ].join("\n");
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#0b0f12;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e6edf1;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0f12;padding:40px 0;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#11171c;border:1px solid #1c252c;border-radius:14px;padding:36px 32px;">
+          <tr><td>
+            <div style="font-weight:800;font-size:20px;letter-spacing:-0.01em;color:#2fd0c5;">TunersAmerica</div>
+            <div style="font-size:13px;color:#8a98a3;margin-top:2px;">Find the right tuner for your build</div>
+            <hr style="border:0;border-top:1px solid #1c252c;margin:24px 0;" />
+            <p style="margin:0 0 12px 0;font-size:15px;line-height:1.55;">${greeting}</p>
+            <p style="margin:0 0 24px 0;font-size:15px;line-height:1.55;">${opts.intro}</p>
+            <p style="margin:0 0 28px 0;">
+              <a href="${opts.ctaUrl}" style="display:inline-block;background:#2fd0c5;color:#0b0f12;font-weight:700;text-decoration:none;padding:13px 22px;border-radius:9px;font-size:15px;">${opts.ctaLabel}</a>
+            </p>
+            <p style="margin:0 0 6px 0;font-size:12px;color:#8a98a3;">Or paste this URL into your browser:</p>
+            <p style="margin:0 0 24px 0;font-size:12px;color:#8a98a3;word-break:break-all;">${opts.ctaUrl}</p>
+            <hr style="border:0;border-top:1px solid #1c252c;margin:24px 0;" />
+            <p style="margin:0;font-size:12px;color:#8a98a3;">${opts.footer || "If you didn't request this email, you can safely ignore it."}</p>
+          </td></tr>
+        </table>
+        <div style="font-size:11px;color:#5a6b75;margin-top:18px;">© ${new Date().getFullYear()} TunersAmerica</div>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+  return { text, html };
+}
+
+async function send(opts: { to: string; subject: string; text: string; html: string; ctaUrl: string }) {
+  if (!resend) {
+    console.log(`[email] (no RESEND_API_KEY) ${opts.to} — ${opts.subject}: ${opts.ctaUrl}`);
+    return { sent: false, link: opts.ctaUrl };
+  }
+  try {
+    const result = await resend.emails.send({
+      from: fromAddress,
+      to: opts.to,
+      subject: opts.subject,
+      text: opts.text,
+      html: opts.html,
+    });
+    if ((result as any)?.error) {
+      console.error("[resend] send failed:", (result as any).error);
+      return { sent: false, link: opts.ctaUrl, error: (result as any).error?.message };
+    }
+    return { sent: true, link: opts.ctaUrl, id: (result as any)?.data?.id };
+  } catch (err: any) {
+    console.error("[resend] send threw:", err?.message || err);
+    return { sent: false, link: opts.ctaUrl, error: err?.message || "resend_exception" };
+  }
+}
+
+export async function sendVerificationEmail(opts: { to: string; name?: string | null; token: string }) {
+  const link = `${publicUrl}/#/verify?token=${encodeURIComponent(opts.token)}`;
+  const { text, html } = renderEmail({
+    name: opts.name,
+    intro: "Confirm your email to finish setting up your TunersAmerica account.",
+    ctaLabel: "Verify email",
+    ctaUrl: link,
+  });
+  return send({ to: opts.to, subject: "Verify your TunersAmerica email", text, html, ctaUrl: link });
+}
+
+export async function sendPasswordResetEmail(opts: { to: string; name?: string | null; token: string }) {
+  const link = `${publicUrl}/#/reset?token=${encodeURIComponent(opts.token)}`;
+  const { text, html } = renderEmail({
+    name: opts.name,
+    intro: "Click below to reset your TunersAmerica password. This link expires in 30 minutes.",
+    ctaLabel: "Reset password",
+    ctaUrl: link,
+    footer: "If you didn't request a password reset, you can safely ignore this email.",
+  });
+  return send({ to: opts.to, subject: "Reset your TunersAmerica password", text, html, ctaUrl: link });
+}
+
 export async function sendMagicLinkEmail(opts: {
   to: string;
   name?: string | null;

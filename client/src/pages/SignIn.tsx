@@ -1,89 +1,184 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { Layout, Section } from "@/components/Layout";
 import { LogoMark } from "@/components/Logo";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { Mail, MailCheck, Loader2, Info, ArrowRight } from "lucide-react";
-
-const schema = z.object({
-  name: z.string().optional(),
-  email: z.string().email("Enter a valid email"),
-});
-type FormValues = z.infer<typeof schema>;
+import { useToast } from "@/hooks/use-toast";
+import { LogIn, UserPlus, MailCheck, Loader2, KeyRound } from "lucide-react";
 
 function getParam(key: string): string | null {
   return new URLSearchParams(window.location.hash.split("?")[1] || "").get(key);
 }
 
+type Mode = "signin" | "signup" | "forgot";
+
 export default function SignIn() {
   const [, navigate] = useLocation();
   const { loginWithToken } = useAuth();
+  const { toast } = useToast();
+
+  const [mode, setMode] = useState<Mode>("signin");
   const [role, setRole] = useState<"customer" | "tuner">(getParam("role") === "tuner" ? "tuner" : "customer");
-  const [sent, setSent] = useState<{ link?: string; token?: string; emailStubbed: boolean; email: string } | null>(null);
-  const [loading, setLoading] = useState(false);
   const redirect = getParam("redirect");
 
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { name: "", email: "" } });
+  // Shared fields
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [postSignup, setPostSignup] = useState<{ email: string } | null>(null);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
 
-  async function onSubmit(values: FormValues) {
+  async function postJson(url: string, body: any) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    let data: any = null;
+    try { data = await res.json(); } catch {}
+    return { res, data };
+  }
+
+  async function landAfterAuth(sessionToken: string) {
+    const user = await loginWithToken(sessionToken);
+    if (!user) return;
+    queryClient.invalidateQueries();
+    if (redirect) navigate(redirect);
+    else navigate(user.role === "tuner" ? "/dashboard/tuner" : "/dashboard/customer");
+  }
+
+  async function handleSignIn(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
+    setNeedsVerification(false);
     try {
-      const res = await apiRequest("POST", "/api/auth/magic-link", { ...values, role });
-      const data = await res.json();
-      setSent({
-        link: data.link,
-        token: data.token,
-        emailStubbed: !!data.emailStubbed,
-        email: values.email,
-      });
+      const { res, data } = await postJson("/api/auth/login", { email, password });
+      if (!res.ok) {
+        if (data?.needsVerification) setNeedsVerification(true);
+        toast({ title: "Couldn't sign in", description: data?.message || "Try again.", variant: "destructive" });
+        return;
+      }
+      if (data.sessionToken) await landAfterAuth(data.sessionToken);
     } finally {
       setLoading(false);
     }
   }
 
-  async function continueWithLink() {
-    if (!sent || !sent.token) return;
-    const user = await loginWithToken(sent.token);
-    if (user) {
-      if (redirect) navigate(redirect);
-      else navigate(user.role === "tuner" ? "/dashboard/tuner" : "/dashboard/customer");
-    }
-  }
-
-  // One-click demo sign-in: request a magic link, log in, and route to the dashboard.
-  // Only available in demo mode (when the API returns the token instead of emailing).
-  async function signInAsSeed(email: string, seedRole: "customer" | "tuner") {
+  async function handleSignUp(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
     try {
-      const res = await apiRequest("POST", "/api/auth/magic-link", { email, role: seedRole });
-      const data = await res.json();
-      if (!data.emailStubbed || !data.token) return; // disabled in production
-      const user = await loginWithToken(data.token);
-      if (user) navigate(user.role === "tuner" ? "/dashboard/tuner" : "/dashboard/customer");
+      const { res, data } = await postJson("/api/auth/register", { email, password, name, role });
+      if (!res.ok) {
+        toast({ title: "Couldn't create account", description: data?.message || "Try again.", variant: "destructive" });
+        return;
+      }
+      setPostSignup({ email });
     } finally {
       setLoading(false);
     }
   }
 
-  const seeds = [
-    { label: "Seeded tuner — Apex Calibrations (active subscription)", email: "tuner@apexcal.com", role: "tuner" as const },
-    { label: "Seeded customer — Sam Okafor (has a vehicle + booking)", email: "driver@tunersamerica.com", role: "customer" as const },
-  ];
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const { res } = await postJson("/api/auth/forgot", { email });
+      if (res.ok) setForgotSent(true);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  // Hide the demo accounts panel in production (when sending real email).
-  // We learn that asynchronously from the sign-in response, so this just hides it
-  // once any send returns emailStubbed:false.
-  const isProd = sent?.emailStubbed === false;
+  async function handleResendVerification() {
+    setLoading(true);
+    try {
+      const { res } = await postJson("/api/auth/resend-verification", { email });
+      if (res.ok) toast({ title: "Verification email sent", description: `Check ${email}.` });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Post-signup screen
+  if (postSignup) {
+    return (
+      <Layout>
+        <Section className="flex justify-center py-16">
+          <Card className="w-full max-w-md p-8">
+            <div className="flex flex-col items-center text-center">
+              <LogoMark className="h-12 w-12" />
+              <h1 className="mt-4 font-display text-2xl font-bold">Check your inbox</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                We sent a verification link to <span className="font-medium text-foreground">{postSignup.email}</span>.
+                Click it to activate your account, then sign in.
+              </p>
+            </div>
+            <Alert className="mt-6">
+              <MailCheck className="h-4 w-4" />
+              <AlertTitle>One last step</AlertTitle>
+              <AlertDescription>
+                Verification links expire in 24 hours. Check your spam folder if you don't see it.
+              </AlertDescription>
+            </Alert>
+            <Button
+              variant="outline"
+              className="mt-6 w-full"
+              onClick={handleResendVerification}
+              disabled={loading}
+              data-testid="button-resend-verification"
+            >
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Resend verification email
+            </Button>
+            <Button
+              variant="ghost"
+              className="mt-2 w-full"
+              onClick={() => { setPostSignup(null); setMode("signin"); }}
+            >
+              Back to sign in
+            </Button>
+          </Card>
+        </Section>
+      </Layout>
+    );
+  }
+
+  // Forgot password "sent" screen
+  if (mode === "forgot" && forgotSent) {
+    return (
+      <Layout>
+        <Section className="flex justify-center py-16">
+          <Card className="w-full max-w-md p-8">
+            <div className="flex flex-col items-center text-center">
+              <LogoMark className="h-12 w-12" />
+              <h1 className="mt-4 font-display text-2xl font-bold">Check your inbox</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                If an account exists for <span className="font-medium text-foreground">{email}</span>,
+                we sent a password reset link. It expires in 30 minutes.
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              className="mt-6 w-full"
+              onClick={() => { setForgotSent(false); setMode("signin"); }}
+            >
+              Back to sign in
+            </Button>
+          </Card>
+        </Section>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -91,90 +186,107 @@ export default function SignIn() {
         <Card className="w-full max-w-md p-8">
           <div className="flex flex-col items-center text-center">
             <LogoMark className="h-12 w-12" />
-            <h1 className="mt-4 font-display text-2xl font-bold">Sign in to TunersAmerica</h1>
-            <p className="mt-1 text-sm text-muted-foreground">We'll email you a magic link — no password.</p>
+            <h1 className="mt-4 font-display text-2xl font-bold">
+              {mode === "signin" ? "Sign in" : mode === "signup" ? "Create your account" : "Reset password"}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === "signin"
+                ? "Welcome back to TunersAmerica."
+                : mode === "signup"
+                ? "Find the right tuner for your build."
+                : "Enter your email and we'll send a reset link."}
+            </p>
           </div>
 
-          <Tabs value={role} onValueChange={(v) => setRole(v as any)} className="mt-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="customer" data-testid="tab-role-customer">I'm a car owner</TabsTrigger>
-              <TabsTrigger value="tuner" data-testid="tab-role-tuner">I'm a tuner</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {!sent ? (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 space-y-4">
-                <FormField control={form.control} name="name" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name (new accounts)</FormLabel>
-                    <FormControl><Input placeholder="Your name" {...field} data-testid="input-name" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="email" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl><Input type="email" placeholder="you@email.com" {...field} data-testid="input-email" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" className="w-full" disabled={loading} data-testid="button-send-link">
-                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-                  Send magic link
-                </Button>
-              </form>
-            </Form>
-          ) : sent.emailStubbed ? (
-            <div className="mt-6 space-y-4">
-              <Alert>
-                <MailCheck className="h-4 w-4" />
-                <AlertTitle>Magic link ready (demo)</AlertTitle>
-                <AlertDescription>
-                  Email isn't configured in this environment. Click below to sign in.
-                </AlertDescription>
-              </Alert>
-              <div className="rounded-md border border-border bg-muted/40 p-3 font-mono text-xs break-all text-muted-foreground" data-testid="text-magic-link">
-                {sent.link}
-              </div>
-              <Button className="w-full" onClick={continueWithLink} data-testid="button-continue-link">
-                Continue <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button variant="ghost" className="w-full" onClick={() => setSent(null)} data-testid="button-use-different-email">Use a different email</Button>
-            </div>
-          ) : (
-            <div className="mt-6 space-y-4">
-              <Alert>
-                <MailCheck className="h-4 w-4" />
-                <AlertTitle>Check your inbox</AlertTitle>
-                <AlertDescription>
-                  We just sent a sign-in link to <span className="font-medium text-foreground">{sent.email}</span>. The link expires in 30 minutes.
-                </AlertDescription>
-              </Alert>
-              <Button variant="ghost" className="w-full" onClick={() => setSent(null)} data-testid="button-use-different-email">Use a different email</Button>
-            </div>
+          {mode !== "forgot" && (
+            <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)} className="mt-6">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="signin" data-testid="tab-signin">Sign in</TabsTrigger>
+                <TabsTrigger value="signup" data-testid="tab-signup">Create account</TabsTrigger>
+              </TabsList>
+            </Tabs>
           )}
 
-          {!isProd && (
-            <div className="mt-7 border-t border-border pt-5">
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Info className="h-3.5 w-3.5" /> Demo accounts (one click — dev only)
+          {mode === "signin" && (
+            <form onSubmit={handleSignIn} className="mt-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" placeholder="you@email.com" value={email}
+                  onChange={(e) => setEmail(e.target.value)} required data-testid="input-signin-email" />
               </div>
-              <div className="space-y-2">
-                {seeds.map((s) => (
-                  <button
-                    key={s.email}
-                    className="w-full rounded-md border border-border p-2.5 text-left text-xs hover-elevate"
-                    data-testid={`button-seed-${s.email}`}
-                    disabled={loading}
-                    onClick={() => signInAsSeed(s.email, s.role)}
-                  >
-                    <div className="font-medium text-foreground">{s.label}</div>
-                    <div className="font-mono text-muted-foreground">{s.email}</div>
-                  </button>
-                ))}
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input id="password" type="password" value={password}
+                  onChange={(e) => setPassword(e.target.value)} required data-testid="input-signin-password" />
               </div>
-            </div>
+              {needsVerification && (
+                <Alert>
+                  <MailCheck className="h-4 w-4" />
+                  <AlertTitle>Verify your email</AlertTitle>
+                  <AlertDescription>
+                    You need to verify your email before signing in.{" "}
+                    <button type="button" onClick={handleResendVerification} className="underline">
+                      Resend the verification email
+                    </button>
+                    .
+                  </AlertDescription>
+                </Alert>
+              )}
+              <Button type="submit" className="w-full" disabled={loading} data-testid="button-signin">
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+                Sign in
+              </Button>
+              <button type="button" onClick={() => setMode("forgot")} className="block w-full text-center text-sm text-muted-foreground underline">
+                Forgot password?
+              </button>
+            </form>
+          )}
+
+          {mode === "signup" && (
+            <form onSubmit={handleSignUp} className="mt-6 space-y-4">
+              <div>
+                <Label className="mb-2 block">I'm signing up as</Label>
+                <Tabs value={role} onValueChange={(v) => setRole(v as any)}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="customer" data-testid="tab-role-customer">A car owner</TabsTrigger>
+                    <TabsTrigger value="tuner" data-testid="tab-role-tuner">A tuner</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="signup-name">Name</Label>
+                <Input id="signup-name" value={name} onChange={(e) => setName(e.target.value)} required data-testid="input-signup-name" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="signup-email">Email</Label>
+                <Input id="signup-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="input-signup-email" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="signup-password">Password</Label>
+                <Input id="signup-password" type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required data-testid="input-signup-password" />
+                <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
+              </div>
+              <Button type="submit" className="w-full" disabled={loading} data-testid="button-signup">
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
+                Create account
+              </Button>
+            </form>
+          )}
+
+          {mode === "forgot" && (
+            <form onSubmit={handleForgot} className="mt-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="forgot-email">Email</Label>
+                <Input id="forgot-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required data-testid="input-forgot-email" />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading} data-testid="button-forgot">
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                Send reset link
+              </Button>
+              <button type="button" onClick={() => setMode("signin")} className="block w-full text-center text-sm text-muted-foreground underline">
+                Back to sign in
+              </button>
+            </form>
           )}
         </Card>
       </Section>

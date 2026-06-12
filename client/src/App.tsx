@@ -2,9 +2,9 @@ import { Switch, Route, Router } from "wouter";
 import { useHashLocation as useHashLocationOriginal } from "wouter/use-hash-location";
 import { useCallback } from "react";
 
-// Wrap wouter's hash location hook so query strings (e.g. magic-link tokens)
-// in the hash don't break route matching. Without this, '#/auth/callback?token=...'
-// fails to match the '/auth/callback' route and falls through to NotFound.
+// Wrap wouter's hash location hook so query strings (e.g. verification tokens)
+// in the hash don't break route matching. Without this, '#/verify?token=...'
+// fails to match the '/verify' route and falls through to NotFound.
 function useHashLocation(): [string, (path: string, opts?: any) => void] {
   const [loc, navigate] = useHashLocationOriginal();
   const cleanLoc = loc.split("?")[0] || "/";
@@ -30,7 +30,8 @@ import HowItWorks from "@/pages/HowItWorks";
 import Join from "@/pages/Join";
 import Pricing from "@/pages/Pricing";
 import SignIn from "@/pages/SignIn";
-import AuthCallback from "@/pages/AuthCallback";
+import VerifyEmail from "@/pages/VerifyEmail";
+import ResetPassword from "@/pages/ResetPassword";
 import Book from "@/pages/Book";
 import CustomerDashboard from "@/pages/CustomerDashboard";
 import TunerDashboard from "@/pages/TunerDashboard";
@@ -47,7 +48,8 @@ function AppRouter() {
       <Route path="/join" component={Join} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/signin" component={SignIn} />
-      <Route path="/auth/callback" component={AuthCallback} />
+      <Route path="/verify" component={VerifyEmail} />
+      <Route path="/reset" component={ResetPassword} />
       <Route path="/book/:id" component={Book} />
       <Route path="/dashboard/customer" component={CustomerDashboard} />
       <Route path="/dashboard/tuner" component={TunerDashboard} />

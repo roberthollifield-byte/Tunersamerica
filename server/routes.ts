@@ -1,7 +1,9 @@
 import type { Express, Request, Response } from "express";
 import type { Server } from "node:http";
 import { storage } from "./storage";
-import { sendMagicLinkEmail, emailEnabled } from "./email";
+import { sendMagicLinkEmail, sendVerificationEmail, sendPasswordResetEmail, emailEnabled } from "./email";
+import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import {
   createBookingSchema,
   insertVehicleSchema,
@@ -56,10 +58,129 @@ async function requireActivePass(req: Request, res: Response): Promise<any | nul
   return user;
 }
 
-export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
-  /* ---------- Auth (magic link, stubbed) ---------- */
+function genToken() { return randomBytes(24).toString("hex"); }
 
-  // "Send" a magic link. In production this emails via Resend; here we return the link.
+export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+  /* ---------- Auth: email + password ---------- */
+
+  // Create a new account. Sends a verification email; user must verify before they can sign in.
+  app.post("/api/auth/register", async (req: Request, res: Response) => {
+    const schema = z.object({
+      email: z.string().email(),
+      password: z.string().min(8, "Password must be at least 8 characters"),
+      name: z.string().min(1),
+      role: z.enum(["tuner", "customer"]),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid input" });
+    }
+    const existing = await storage.getUserByEmail(parsed.data.email);
+    if (existing) {
+      return res.status(409).json({ message: "An account with that email already exists. Try signing in." });
+    }
+    const hash = await bcrypt.hash(parsed.data.password, 10);
+    const verifyToken = genToken();
+    const user = await storage.createUser({
+      email: parsed.data.email,
+      name: parsed.data.name,
+      role: parsed.data.role,
+      stripeCustomerId: null,
+      stripeAccountId: null,
+      hostSubscriptionStatus: parsed.data.role === "tuner" ? "inactive" : null,
+    } as any);
+    await storage.setPasswordHash(user.id, hash);
+    await storage.setEmailVerifyToken(user.id, verifyToken);
+    const result = await sendVerificationEmail({ to: user.email, name: user.name, token: verifyToken });
+    return res.json({
+      ok: true,
+      emailSent: emailEnabled && result.sent,
+      // In dev / unconfigured email, expose the link so local testing still works.
+      verifyLink: emailEnabled && result.sent ? undefined : result.link,
+    });
+  });
+
+  // Verify an email using the token from the verification email.
+  app.post("/api/auth/verify-email", async (req: Request, res: Response) => {
+    const token = (req.body?.token as string | undefined)?.trim();
+    if (!token) return res.status(400).json({ message: "Missing token" });
+    const user = await storage.getUserByEmailVerifyToken(token);
+    if (!user) return res.status(400).json({ message: "That verification link is invalid or has already been used." });
+    const updated = await storage.markEmailVerified(user.id);
+    // Return the session token so the SPA can sign them in immediately after verifying.
+    return res.json({ ok: true, sessionToken: updated?.token, role: updated?.role });
+  });
+
+  // Resend the verification email.
+  app.post("/api/auth/resend-verification", async (req: Request, res: Response) => {
+    const email = (req.body?.email as string | undefined)?.toLowerCase().trim();
+    if (!email) return res.status(400).json({ message: "Missing email" });
+    const user = await storage.getUserByEmail(email);
+    if (!user) return res.json({ ok: true }); // don't leak existence
+    if (user.emailVerified) return res.json({ ok: true, alreadyVerified: true });
+    const verifyToken = genToken();
+    await storage.setEmailVerifyToken(user.id, verifyToken);
+    await sendVerificationEmail({ to: user.email, name: user.name, token: verifyToken });
+    return res.json({ ok: true });
+  });
+
+  // Sign in with email + password. Requires the email to be verified first.
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    const schema = z.object({
+      email: z.string().email(),
+      password: z.string().min(1),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid email or password" });
+    const user = await storage.getUserByEmail(parsed.data.email);
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+    const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
+    if (!ok) return res.status(401).json({ message: "Invalid email or password" });
+    if (!user.emailVerified) {
+      return res.status(403).json({ message: "Please verify your email before signing in.", needsVerification: true });
+    }
+    return res.json({ ok: true, sessionToken: user.token, role: user.role });
+  });
+
+  // Request a password reset email.
+  app.post("/api/auth/forgot", async (req: Request, res: Response) => {
+    const email = (req.body?.email as string | undefined)?.toLowerCase().trim();
+    if (!email) return res.status(400).json({ message: "Missing email" });
+    const user = await storage.getUserByEmail(email);
+    // Always return 200 so we don't leak which emails are registered.
+    if (!user) return res.json({ ok: true });
+    const token = genToken();
+    const expiresAt = Date.now() + 30 * 60 * 1000;
+    await storage.setPasswordResetToken(user.id, token, expiresAt);
+    await sendPasswordResetEmail({ to: user.email, name: user.name, token });
+    return res.json({ ok: true });
+  });
+
+  // Reset password using the token from the reset email.
+  app.post("/api/auth/reset", async (req: Request, res: Response) => {
+    const schema = z.object({
+      token: z.string().min(1),
+      password: z.string().min(8, "Password must be at least 8 characters"),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid input" });
+    const user = await storage.getUserByPasswordResetToken(parsed.data.token);
+    if (!user || !user.passwordResetExpiresAt || user.passwordResetExpiresAt < Date.now()) {
+      return res.status(400).json({ message: "That reset link is invalid or has expired." });
+    }
+    const hash = await bcrypt.hash(parsed.data.password, 10);
+    await storage.setPasswordHash(user.id, hash);
+    await storage.setPasswordResetToken(user.id, null, null);
+    // Reset implies email ownership, so mark verified too.
+    if (!user.emailVerified) await storage.markEmailVerified(user.id);
+    return res.json({ ok: true, sessionToken: user.token, role: user.role });
+  });
+
+  /* ---------- Auth (legacy magic link — disabled in prod) ---------- */
+
+  // Kept for /api/me + admin scripts; no longer exposed in the SignIn UI.
   app.post("/api/auth/magic-link", async (req: Request, res: Response) => {
     const schema = z.object({
       email: z.string().email(),

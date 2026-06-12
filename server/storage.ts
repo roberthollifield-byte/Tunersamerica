@@ -77,6 +77,13 @@ export interface IStorage {
   setHostSubscription(userId: number, status: string): Promise<User | undefined>;
   setStripeAccount(userId: number, accountId: string): Promise<User | undefined>;
   setBuyerPass(userId: number, expiresAt: number): Promise<User | undefined>;
+  // password auth
+  setPasswordHash(userId: number, hash: string): Promise<User | undefined>;
+  setEmailVerifyToken(userId: number, token: string | null): Promise<User | undefined>;
+  markEmailVerified(userId: number): Promise<User | undefined>;
+  getUserByEmailVerifyToken(token: string): Promise<User | undefined>;
+  setPasswordResetToken(userId: number, token: string | null, expiresAt: number | null): Promise<User | undefined>;
+  getUserByPasswordResetToken(token: string): Promise<User | undefined>;
   // promo codes
   getPromoCodeByCode(code: string): Promise<PromoCode | undefined>;
   getPromoRedemption(userId: number, promoCodeId: number, role: string): Promise<PromoRedemption | undefined>;
@@ -244,6 +251,39 @@ export class DatabaseStorage implements IStorage {
       .set({ passExpiresAt: expiresAt })
       .where(eq(users.id, userId))
       .returning();
+    return rows[0];
+  }
+
+  async setPasswordHash(userId: number, hash: string) {
+    const rows = await db.update(users).set({ passwordHash: hash }).where(eq(users.id, userId)).returning();
+    return rows[0];
+  }
+  async setEmailVerifyToken(userId: number, token: string | null) {
+    const rows = await db.update(users).set({ emailVerifyToken: token }).where(eq(users.id, userId)).returning();
+    return rows[0];
+  }
+  async markEmailVerified(userId: number) {
+    const rows = await db
+      .update(users)
+      .set({ emailVerified: true, emailVerifyToken: null })
+      .where(eq(users.id, userId))
+      .returning();
+    return rows[0];
+  }
+  async getUserByEmailVerifyToken(token: string) {
+    const rows = await db.select().from(users).where(eq(users.emailVerifyToken, token));
+    return rows[0];
+  }
+  async setPasswordResetToken(userId: number, token: string | null, expiresAt: number | null) {
+    const rows = await db
+      .update(users)
+      .set({ passwordResetToken: token, passwordResetExpiresAt: expiresAt })
+      .where(eq(users.id, userId))
+      .returning();
+    return rows[0];
+  }
+  async getUserByPasswordResetToken(token: string) {
+    const rows = await db.select().from(users).where(eq(users.passwordResetToken, token));
     return rows[0];
   }
 
