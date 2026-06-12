@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PLATFORMS, CATEGORY_LABELS } from "@/lib/format";
+import { CATEGORY_LABELS, PLATFORMS } from "@/lib/format";
 import {
   Wifi, Gauge, Stethoscope, Cpu, Cog, Wrench, Flag, ShieldCheck, Search,
   Star, ArrowRight, BadgeCheck, Quote,
@@ -29,14 +29,14 @@ const SERVICES = [
 
 function SearchShell() {
   const [, navigate] = useLocation();
-  const [make, setMake] = useState("");
   const [service, setService] = useState("");
   const [mode, setMode] = useState("");
+  const [location, setLocation] = useState("");
   function submit() {
     const params = new URLSearchParams();
-    if (make) params.set("make", make);
     if (service) params.set("service", service);
     if (mode) params.set("mode", mode);
+    if (location.trim()) params.set("location", location.trim());
     navigate(`/tuners${params.toString() ? "?" + params.toString() : ""}`);
   }
   return (
@@ -44,18 +44,11 @@ function SearchShell() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="font-semibold">Find a specialist</div>
-          <div className="text-sm text-muted-foreground">Search by vehicle, service, and availability</div>
+          <div className="text-sm text-muted-foreground">Search by service and availability</div>
         </div>
         <Badge className="bg-primary/15 text-primary">Fast match</Badge>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <Select value={make} onValueChange={setMake}>
-          <SelectTrigger data-testid="select-home-make"><SelectValue placeholder="Make" /></SelectTrigger>
-          <SelectContent>
-            {PLATFORMS.map((p) => <SelectItem key={p.key} value={p.key}>{p.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Input placeholder="Model / Year" data-testid="input-home-model" />
         <Select value={service} onValueChange={setService}>
           <SelectTrigger data-testid="select-home-service"><SelectValue placeholder="Service needed" /></SelectTrigger>
           <SelectContent>
@@ -70,7 +63,13 @@ function SearchShell() {
             <SelectItem value="either">Either</SelectItem>
           </SelectContent>
         </Select>
-        <Input placeholder="Location (city or ZIP)" className="sm:col-span-2" data-testid="input-home-location" />
+        <Input
+          placeholder="Location (city or ZIP)"
+          className="sm:col-span-2"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          data-testid="input-home-location"
+        />
       </div>
       <Button className="mt-4 w-full" onClick={submit} data-testid="button-search-tuners">
         <Search className="mr-2 h-4 w-4" /> Search Tuners
@@ -145,11 +144,11 @@ export default function Home() {
           <Card className="p-7">
             <h3 className="font-display text-xl font-bold">Need tuning help?</h3>
             <p className="mt-3 text-muted-foreground">
-              Tell us what you drive, what's been done to the car, and what you want out of it. Compare
-              tuners for remote support, dyno tuning, drivability fixes, diagnostics, and full calibration.
+              Tell us what service you need and where you are. Compare tuners for remote support,
+              dyno tuning, drivability fixes, diagnostics, and full calibration.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              {["Vehicle fitment", "Remote tuning", "Dyno sessions"].map((c) => (
+              {["Remote tuning", "Dyno sessions", "Diagnostics"].map((c) => (
                 <Badge key={c} variant="secondary">{c}</Badge>
               ))}
             </div>

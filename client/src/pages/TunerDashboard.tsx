@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type { ListingWithDetails } from "@shared/schema";
@@ -8,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -15,8 +19,19 @@ import { money, CATEGORY_LABELS, parseMakes } from "@/lib/format";
 import { PromoRedeemBox } from "@/lib/promo";
 import {
   Store, Wrench, Calendar, DollarSign, CreditCard, Link2,
-  Loader2, CheckCircle2, AlertTriangle, Gauge, Wifi,
+  Loader2, CheckCircle2, AlertTriangle, Gauge, Wifi, Save,
 } from "lucide-react";
+
+// Default name + description shown when a tuner first enables a service category.
+const SERVICE_DEFAULTS: Record<string, { name: string; description: string; price: number }> = {
+  remote: { name: "Remote tuning", description: "File reads, datalog review, and tune revisions delivered remotely.", price: 350 },
+  dyno: { name: "Dyno tuning", description: "Full in-person dyno calibration session.", price: 800 },
+  diagnostics: { name: "Diagnostics", description: "Drivability and fault diagnosis with log review.", price: 150 },
+  ecu: { name: "ECU calibration", description: "Engine ECU calibration for supported platforms.", price: 500 },
+  tcm: { name: "TCM calibration", description: "Transmission control module tuning.", price: 400 },
+  build_support: { name: "Build support", description: "Hardware, injector, fuel-system, and boost setup guidance.", price: 250 },
+  race_setup: { name: "Race setup", description: "Track and drag-strip dedicated calibrations.", price: 1200 },
+};
 
 const STATUS_COLOR: Record<string, string> = {
   requested: "bg-amber-500/15 text-amber-400",
@@ -154,19 +169,8 @@ export default function TunerDashboard() {
           {/* Services */}
           <TabsContent value="services" className="mt-6">
             {listing ? (
-              <div className="space-y-3">
-                {listing.services.map((s) => (
-                  <Card key={s.id} className="flex flex-wrap items-center justify-between gap-3 p-5" data-testid={`card-tuner-service-${s.id}`}>
-                    <div>
-                      <div className="flex items-center gap-2"><span className="font-semibold">{s.name}</span><Badge variant="outline" className="text-xs">{CATEGORY_LABELS[s.category]}</Badge></div>
-                      <p className="mt-1 text-sm text-muted-foreground">{s.description}</p>
-                    </div>
-                    <div className="font-display text-lg font-bold">{money(s.price)}</div>
-                  </Card>
-                ))}
-                <p className="text-xs text-muted-foreground">Service editing is available in production. Seed services shown here.</p>
-              </div>
-            ) : <Card className="p-12 text-center text-muted-foreground">No services.</Card>}
+              <ServicesEditor listing={listing} token={token!} />
+            ) : <Card className="p-12 text-center text-muted-foreground">No listing yet — create your shop profile first.</Card>}
           </TabsContent>
 
           {/* Bookings */}
@@ -270,5 +274,187 @@ export default function TunerDashboard() {
         </Tabs>
       </Section>
     </Layout>
+  );
+}
+
+/* ------------- Services editor ------------- */
+
+type EditableService = {
+  category: string;
+  enabled: boolean;
+  name: string;
+  description: string;
+  price: number;
+};
+
+function buildInitialRows(listing: ListingWithDetails): EditableService[] {
+  const byCategory = new Map<string, ListingWithDetails["services"][number]>();
+  for (const s of listing.services) byCategory.set(s.category, s);
+  return Object.keys(CATEGORY_LABELS).map((cat) => {
+    const existing = byCategory.get(cat);
+    const def = SERVICE_DEFAULTS[cat] || { name: CATEGORY_LABELS[cat], description: "", price: 0 };
+    if (existing) {
+      return {
+        category: cat,
+        enabled: true,
+        name: existing.name,
+        description: existing.description,
+        price: existing.price,
+      };
+    }
+    return {
+      category: cat,
+      enabled: false,
+      name: def.name,
+      description: def.description,
+      price: def.price,
+    };
+  });
+}
+
+function ServicesEditor({ listing, token }: { listing: ListingWithDetails; token: string }) {
+  const { toast } = useToast();
+  const [rows, setRows] = useState<EditableService[]>(() => buildInitialRows(listing));
+
+  // Re-seed when the underlying listing changes (e.g. after save / refetch).
+  useEffect(() => {
+    setRows(buildInitialRows(listing));
+  }, [listing]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const services = rows
+        .filter((r) => r.enabled)
+        .map((r) => ({
+          category: r.category,
+          name: r.name.trim() || CATEGORY_LABELS[r.category],
+          description: r.description.trim(),
+          price: Math.max(0, Math.round(Number(r.price) || 0)),
+        }));
+      const res = await apiRequest("PUT", "/api/me/services", { token, services });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Services saved", description: "Your service menu is updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/listing", token] });
+      queryClient.invalidateQueries({ queryKey: ["/api/listings"] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Couldn't save services",
+        description: err?.message || "Try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  function update(category: string, patch: Partial<EditableService>) {
+    setRows((prev) => prev.map((r) => (r.category === category ? { ...r, ...patch } : r)));
+  }
+
+  const enabledCount = rows.filter((r) => r.enabled).length;
+
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-display text-lg font-bold">Services you offer</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Toggle the services you provide and set a starting price for each. Drivers see only the
+            services you've enabled.
+          </p>
+        </div>
+        <Badge variant="outline" className="text-xs" data-testid="badge-services-count">
+          {enabledCount} {enabledCount === 1 ? "service" : "services"} enabled
+        </Badge>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {rows.map((r) => (
+          <div
+            key={r.category}
+            className={`rounded-lg border p-4 transition-colors ${
+              r.enabled ? "border-primary/40 bg-primary/5" : "border-border bg-card/40"
+            }`}
+            data-testid={`row-service-${r.category}`}
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Checkbox
+                id={`enable-${r.category}`}
+                checked={r.enabled}
+                onCheckedChange={(v) => update(r.category, { enabled: !!v })}
+                data-testid={`checkbox-service-${r.category}`}
+              />
+              <Label htmlFor={`enable-${r.category}`} className="cursor-pointer font-semibold">
+                {CATEGORY_LABELS[r.category]}
+              </Label>
+              <div className="ml-auto flex items-center gap-2">
+                <Label htmlFor={`price-${r.category}`} className="text-xs text-muted-foreground">
+                  Starting at
+                </Label>
+                <div className="flex items-center">
+                  <span className="text-muted-foreground">$</span>
+                  <Input
+                    id={`price-${r.category}`}
+                    type="number"
+                    min={0}
+                    step={25}
+                    disabled={!r.enabled}
+                    value={r.price}
+                    onChange={(e) => update(r.category, { price: Number(e.target.value) })}
+                    className="ml-1 w-28"
+                    data-testid={`input-price-${r.category}`}
+                  />
+                </div>
+              </div>
+            </div>
+            {r.enabled && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_2fr]">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`name-${r.category}`} className="text-xs text-muted-foreground">
+                    Display name
+                  </Label>
+                  <Input
+                    id={`name-${r.category}`}
+                    value={r.name}
+                    onChange={(e) => update(r.category, { name: e.target.value })}
+                    data-testid={`input-name-${r.category}`}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor={`description-${r.category}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    Short description
+                  </Label>
+                  <Input
+                    id={`description-${r.category}`}
+                    value={r.description}
+                    onChange={(e) => update(r.category, { description: e.target.value })}
+                    data-testid={`input-description-${r.category}`}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 flex justify-end">
+        <Button
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+          data-testid="button-save-services"
+        >
+          {save.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="mr-2 h-4 w-4" />
+          )}
+          Save services
+        </Button>
+      </div>
+    </Card>
   );
 }

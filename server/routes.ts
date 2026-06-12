@@ -9,6 +9,7 @@ import {
   insertVehicleSchema,
   insertServiceSchema,
   insertReviewSchema,
+  serviceCategories,
 } from "@shared/schema";
 import { z } from "zod";
 import {
@@ -289,6 +290,44 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/services/:id", async (req: Request, res: Response) => {
     await storage.deleteService(Number(req.params.id));
     res.json({ ok: true });
+  });
+
+  // Replace the current tuner's services in one shot. Auth via session token.
+  app.put("/api/me/services", async (req: Request, res: Response) => {
+    const token = (req.body?.token as string | undefined) || (req.query.token as string | undefined);
+    const user = token ? await storage.getUserByToken(token) : undefined;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "tuner") return res.status(403).json({ message: "Tuner only" });
+    const listing = await storage.getListingByUserId(user.id);
+    if (!listing) return res.status(404).json({ message: "No listing found for this account." });
+
+    const schema = z.object({
+      services: z.array(z.object({
+        category: z.enum(serviceCategories as unknown as [string, ...string[]]),
+        name: z.string().min(1).max(120),
+        description: z.string().max(500).optional().default(""),
+        price: z.number().int().min(0).max(1_000_000),
+      })).max(20),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid services" });
+    }
+
+    // Replace all services for this listing.
+    const existing = await storage.getServicesByListing(listing.id);
+    for (const s of existing) await storage.deleteService(s.id);
+    for (const s of parsed.data.services) {
+      await storage.createService({
+        listingId: listing.id,
+        name: s.name,
+        description: s.description ?? "",
+        price: s.price,
+        category: s.category,
+      });
+    }
+    const next = await storage.getServicesByListing(listing.id);
+    res.json({ ok: true, services: next });
   });
 
   /* ---------- Vehicles ---------- */
