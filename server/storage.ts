@@ -86,7 +86,7 @@ export interface IStorage {
   // driver profile
   getDriverProfile(userId: number): Promise<DriverProfile | undefined>;
   // subscriptions
-  upsertSubscription(userId: number, status: string, currentPeriodEnd: number): Promise<Subscription>;
+  upsertSubscription(userId: number, status: string, currentPeriodEnd: number, stripeSubscriptionId?: string): Promise<Subscription>;
   setHostSubscription(userId: number, status: string): Promise<User | undefined>;
   setStripeAccount(userId: number, accountId: string): Promise<User | undefined>;
   setStripeCustomer(userId: number, customerId: string): Promise<User | undefined>;
@@ -272,22 +272,27 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async upsertSubscription(userId: number, status: string, currentPeriodEnd: number) {
+  async upsertSubscription(userId: number, status: string, currentPeriodEnd: number, stripeSubscriptionId?: string) {
     const existing = await db
       .select()
       .from(subscriptions)
       .where(eq(subscriptions.userId, userId));
+    // Only overwrite the subscription id when we have a real one from Stripe;
+    // otherwise preserve whatever is already stored (real id beats mock).
     if (existing[0]) {
+      const patch: any = { status, currentPeriodEnd };
+      if (stripeSubscriptionId) patch.stripeSubscriptionId = stripeSubscriptionId;
+      else if (!existing[0].stripeSubscriptionId) patch.stripeSubscriptionId = `sub_mock_${userId}`;
       const rows = await db
         .update(subscriptions)
-        .set({ status, currentPeriodEnd, stripeSubscriptionId: `sub_mock_${userId}` })
+        .set(patch)
         .where(eq(subscriptions.id, existing[0].id))
         .returning();
       return rows[0];
     }
     const rows = await db
       .insert(subscriptions)
-      .values({ userId, status, currentPeriodEnd, stripeSubscriptionId: `sub_mock_${userId}` })
+      .values({ userId, status, currentPeriodEnd, stripeSubscriptionId: stripeSubscriptionId ?? `sub_mock_${userId}` })
       .returning();
     return rows[0];
   }

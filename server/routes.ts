@@ -903,7 +903,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       if (live) {
         const periodEnd = (live.current_period_end || live.items?.data?.[0]?.current_period_end || 0) * 1000;
-        await storage.upsertSubscription(user.id, "active", periodEnd || (Date.now() + YEAR_MS));
+        await storage.upsertSubscription(user.id, "active", periodEnd || (Date.now() + YEAR_MS), String(live.id));
         const updated = await storage.setHostSubscription(user.id, "active");
         if (live.customer && !user.stripeCustomerId) {
           try { await storage.setStripeCustomer(user.id, String(live.customer)); } catch {}
@@ -992,6 +992,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             const periodEnd = invoice.period_end * 1000;
             await storage.upsertSubscription(userId, "active", periodEnd);
             await storage.setHostSubscription(userId, "active");
+          }
+          break;
+        }
+
+        case "customer.subscription.created":
+        case "customer.subscription.updated": {
+          // Belt-and-suspenders: activate on subscription create/update too.
+          // checkout.session.completed sometimes lags or is missed for trialing
+          // subs created via promo codes (100% off first period). This event
+          // is more reliable for the trialing state.
+          const sub = event.data.object;
+          const userId = sub.metadata?.userId ? Number(sub.metadata.userId) : null;
+          if (!userId) break;
+          const isLive = sub.status === "active" || sub.status === "trialing";
+          if (isLive) {
+            const periodEnd = (sub.current_period_end || sub.items?.data?.[0]?.current_period_end || 0) * 1000;
+            await storage.upsertSubscription(userId, "active", periodEnd || (Date.now() + YEAR_MS), String(sub.id));
+            await storage.setHostSubscription(userId, "active");
+            if (sub.customer) {
+              try { await storage.setStripeCustomer(userId, String(sub.customer)); } catch {}
+            }
+          } else if (sub.status === "canceled" || sub.status === "unpaid" || sub.status === "incomplete_expired") {
+            await storage.setHostSubscription(userId, "inactive");
           }
           break;
         }

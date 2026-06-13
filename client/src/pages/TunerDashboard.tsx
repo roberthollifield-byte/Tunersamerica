@@ -39,6 +39,10 @@ const STATUS_COLOR: Record<string, string> = {
 };
 const NEXT_STATUS: Record<string, string> = { requested: "accepted", accepted: "in_progress", in_progress: "completed" };
 
+// Tracks which user ids have already had the auto-refresh fired this session.
+// Module-level so it survives React strict-mode double effects.
+const autoRefreshAttempted = new Set<number>();
+
 function ComingSoonBadge() {
   return <Badge variant="outline" className="gap-1 border-amber-500/40 text-amber-400"><AlertTriangle className="h-3 w-3" /> Coming soon</Badge>;
 }
@@ -82,6 +86,34 @@ export default function TunerDashboard() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Safety-net auto-refresh: if a tuner loads the dashboard and is still
+  // marked inactive, ask the server to check Stripe directly. Catches users
+  // who paid but never came back via the ?sub=success redirect (the webhook
+  // also covers this, but webhook delivery has been flaky). Runs at most
+  // once per page-load per user — bounded by a module-level Set so React
+  // strict-mode double-invokes don't double-fire.
+  useEffect(() => {
+    if (!token || !user) return;
+    if (user.role !== "tuner") return;
+    if (user.hostSubscriptionStatus === "active") return;
+    if (autoRefreshAttempted.has(user.id)) return;
+    autoRefreshAttempted.add(user.id);
+    (async () => {
+      try {
+        const res = await apiRequest("POST", "/api/stripe/refresh-subscription", { token });
+        const data = await res.json();
+        if (data?.status === "active" || data?.status === "trialing") {
+          await loginWithToken(token);
+          queryClient.invalidateQueries();
+          toast({ title: "Subscription found", description: "Your subscription is now active." });
+        }
+      } catch {
+        // Silent — user can still subscribe manually if needed.
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, user?.id, user?.hostSubscriptionStatus]);
 
   const { data: listing, isLoading } = useQuery<ListingWithDetails | null>({
     queryKey: ["/api/me/listing", token],
