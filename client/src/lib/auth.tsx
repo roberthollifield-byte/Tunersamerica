@@ -13,8 +13,27 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
-// Token is held in module memory only (NOT localStorage — blocked in the iframe sandbox).
-let memoryToken: string | null = null;
+// Token persistence: prefer localStorage (so page refresh keeps you signed in),
+// fall back to module memory when storage is unavailable (sandboxed iframes).
+const STORAGE_KEY = "tunersamerica.token";
+function readStoredToken(): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeStoredToken(t: string | null) {
+  try {
+    if (typeof window === "undefined") return;
+    if (t) window.localStorage.setItem(STORAGE_KEY, t);
+    else window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+let memoryToken: string | null = readStoredToken();
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -28,12 +47,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await apiRequest("GET", `/api/me?token=${encodeURIComponent(t)}`);
       const u = (await res.json()) as User;
       memoryToken = t;
+      writeStoredToken(t);
       setToken(t);
       setUser(u);
       qc.invalidateQueries();
       return u;
     } catch {
       memoryToken = null;
+      writeStoredToken(null);
       setToken(null);
       setUser(null);
       return null;
@@ -44,15 +65,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     memoryToken = null;
+    writeStoredToken(null);
     setToken(null);
     setUser(null);
     qc.clear();
   }
 
-  // Re-hydrate if a token survives client-side navigation within the session.
+  // Re-hydrate on mount (covers full page refresh as well as in-session nav).
   useEffect(() => {
-    if (memoryToken && !user) {
-      loginWithToken(memoryToken);
+    const stored = memoryToken || readStoredToken();
+    if (stored && !user) {
+      loginWithToken(stored);
+    } else if (!stored) {
+      setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

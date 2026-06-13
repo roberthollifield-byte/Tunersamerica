@@ -287,6 +287,58 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(updated);
   });
 
+  // Create-or-update the current tuner's listing in one shot. Auth via session token.
+  app.put("/api/me/listing", async (req: Request, res: Response) => {
+    const token = (req.body?.token as string | undefined) || (req.query.token as string | undefined);
+    const user = token ? await storage.getUserByToken(token) : undefined;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "tuner") return res.status(403).json({ message: "Tuner only" });
+
+    const b = req.body || {};
+    const shopName = typeof b.shopName === "string" ? b.shopName.trim() : "";
+    const location = typeof b.location === "string" ? b.location.trim() : "";
+    const bio = typeof b.bio === "string" ? b.bio.trim() : "";
+    if (!shopName) return res.status(400).json({ message: "Shop name is required" });
+    if (!location) return res.status(400).json({ message: "Location is required" });
+
+    const supportedMakes = Array.isArray(b.supportedMakes)
+      ? b.supportedMakes.filter((m: any) => typeof m === "string" && m.trim().length > 0).map((m: string) => m.trim())
+      : [];
+    const dynoAvailable = !!b.dynoAvailable;
+    const remoteAvailable = !!b.remoteAvailable;
+    const startingPrice = typeof b.startingPrice === "number" && b.startingPrice >= 0 ? Math.round(b.startingPrice) : 0;
+    const heroImage = typeof b.heroImage === "string" && b.heroImage.trim().length > 0 ? b.heroImage.trim() : null;
+
+    const existing = await storage.getListingByUserId(user.id);
+    const isVisible = user.hostSubscriptionStatus === "active";
+
+    try {
+      let listing;
+      if (existing) {
+        listing = await storage.updateListing(existing.id, {
+          shopName, location, bio, dynoAvailable, remoteAvailable,
+          supportedMakes, startingPrice, heroImage, isVisible,
+        });
+      } else {
+        listing = await storage.createListing({
+          userId: user.id,
+          shopName, location, bio, dynoAvailable, remoteAvailable,
+          supportedMakes, startingPrice, heroImage,
+        } as any);
+        // Newly-created listing inherits visibility from current subscription state.
+        if (listing && listing.isVisible !== isVisible) {
+          listing = await storage.updateListing(listing.id, { isVisible });
+        }
+      }
+      if (!listing) return res.status(500).json({ message: "Couldn't save listing" });
+      const full = await storage.getListingWithDetails(listing.id);
+      return res.json(full ?? listing);
+    } catch (e: any) {
+      console.error("PUT /api/me/listing failed:", e?.message);
+      return res.status(500).json({ message: "Couldn't save listing", detail: e?.message });
+    }
+  });
+
   /* ---------- Services ---------- */
 
   app.post("/api/services", async (req: Request, res: Response) => {

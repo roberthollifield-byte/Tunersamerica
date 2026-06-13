@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -172,34 +173,16 @@ export default function TunerDashboard() {
 
           {/* Listing */}
           <TabsContent value="listing" className="mt-6">
-            {isLoading ? <Skeleton className="h-48 w-full" /> : listing ? (
-              <Card className="p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <h2 className="font-display text-xl font-bold">{listing.shopName}</h2>
-                    <p className="text-sm text-muted-foreground">{listing.location}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    {listing.dynoAvailable && <Badge className="gap-1"><Gauge className="h-3 w-3" />Dyno</Badge>}
-                    {listing.remoteAvailable && <Badge className="gap-1"><Wifi className="h-3 w-3" />Remote</Badge>}
-                  </div>
-                </div>
-                <p className="mt-4 text-muted-foreground">{listing.bio}</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {parseMakes(listing.supportedMakes).map((m) => <Badge key={m} variant="secondary">{m}</Badge>)}
-                </div>
-                <div className="mt-5 flex gap-2">
-                  <Button variant="outline" onClick={() => navigate(`/tuners/${listing.id}`)} data-testid="button-view-public">View public profile</Button>
-                </div>
-              </Card>
-            ) : <Card className="p-12 text-center text-muted-foreground">No listing found for this account.</Card>}
+            {isLoading ? <Skeleton className="h-48 w-full" /> : (
+              <ListingEditor listing={listing ?? null} token={token!} onView={(id) => navigate(`/tuners/${id}`)} />
+            )}
           </TabsContent>
 
           {/* Capabilities */}
           <TabsContent value="services" className="mt-6">
             {listing ? (
               <CapabilitiesEditor listing={listing} token={token!} />
-            ) : <Card className="p-12 text-center text-muted-foreground">No listing yet — create your shop profile first.</Card>}
+            ) : <Card className="p-12 text-center text-muted-foreground">Create your shop profile on the Listing tab first.</Card>}
           </TabsContent>
 
           {/* Bookings */}
@@ -468,6 +451,212 @@ function CapabilitiesEditor({ listing, token }: { listing: ListingWithDetails; t
         <Button onClick={() => save.mutate()} disabled={save.isPending} data-testid="button-save-capabilities">
           {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
           Save capabilities
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/* ------------- Listing editor (create + edit) ------------- */
+
+type ListingForm = {
+  shopName: string;
+  location: string;
+  bio: string;
+  dynoAvailable: boolean;
+  remoteAvailable: boolean;
+  startingPrice: number;
+  supportedMakes: string;
+  heroImage: string;
+};
+
+function formFromListing(l: ListingWithDetails | null): ListingForm {
+  if (!l) {
+    return {
+      shopName: "", location: "", bio: "",
+      dynoAvailable: false, remoteAvailable: false,
+      startingPrice: 0, supportedMakes: "", heroImage: "",
+    };
+  }
+  return {
+    shopName: l.shopName ?? "",
+    location: l.location ?? "",
+    bio: l.bio ?? "",
+    dynoAvailable: !!l.dynoAvailable,
+    remoteAvailable: !!l.remoteAvailable,
+    startingPrice: typeof l.startingPrice === "number" ? l.startingPrice : 0,
+    supportedMakes: parseMakes(l.supportedMakes).join(", "),
+    heroImage: l.heroImage ?? "",
+  };
+}
+
+function ListingEditor({
+  listing,
+  token,
+  onView,
+}: {
+  listing: ListingWithDetails | null;
+  token: string;
+  onView: (id: number) => void;
+}) {
+  const { toast } = useToast();
+  const [form, setForm] = useState<ListingForm>(() => formFromListing(listing));
+
+  useEffect(() => {
+    setForm(formFromListing(listing));
+  }, [listing]);
+
+  const isCreate = !listing;
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const supportedMakes = form.supportedMakes
+        .split(/[,\n]/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const body = {
+        token,
+        shopName: form.shopName.trim(),
+        location: form.location.trim(),
+        bio: form.bio.trim(),
+        dynoAvailable: form.dynoAvailable,
+        remoteAvailable: form.remoteAvailable,
+        startingPrice: Number.isFinite(form.startingPrice) ? Math.max(0, Math.round(form.startingPrice)) : 0,
+        supportedMakes,
+        heroImage: form.heroImage.trim() || null,
+      };
+      const res = await apiRequest("PUT", "/api/me/listing", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: isCreate ? "Shop profile created" : "Shop profile saved",
+        description: isCreate
+          ? "Now head to the Capabilities tab to pick what your shop offers."
+          : "Drivers will see your updated profile.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/listing", token] });
+      queryClient.invalidateQueries({ queryKey: ["/api/listings"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Couldn't save", description: err?.message || "Try again.", variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-display text-xl font-bold">
+            {isCreate ? "Create your shop profile" : "Edit shop profile"}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isCreate
+              ? "Fill these in to publish your listing in the directory."
+              : "Update what drivers see when they find you."}
+          </p>
+        </div>
+        {!isCreate && listing && (
+          <Button variant="outline" onClick={() => onView(listing.id)} data-testid="button-view-public">
+            View public profile
+          </Button>
+        )}
+      </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Label htmlFor="li-shopName">Shop name *</Label>
+          <Input
+            id="li-shopName"
+            value={form.shopName}
+            onChange={(e) => setForm((f) => ({ ...f, shopName: e.target.value }))}
+            placeholder="e.g. Hollifield Performance"
+            data-testid="input-listing-shopname"
+          />
+        </div>
+        <div>
+          <Label htmlFor="li-location">Location *</Label>
+          <Input
+            id="li-location"
+            value={form.location}
+            onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+            placeholder="City, State"
+            data-testid="input-listing-location"
+          />
+        </div>
+        <div>
+          <Label htmlFor="li-price">Starting price ($)</Label>
+          <Input
+            id="li-price"
+            type="number"
+            min={0}
+            step={25}
+            value={form.startingPrice}
+            onChange={(e) => setForm((f) => ({ ...f, startingPrice: Number(e.target.value) }))}
+            data-testid="input-listing-price"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="li-bio">About your shop</Label>
+          <Textarea
+            id="li-bio"
+            value={form.bio}
+            onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))}
+            rows={4}
+            placeholder="What makes your shop different? Specialties, dyno specs, years in business…"
+            data-testid="input-listing-bio"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="li-makes">Supported makes (comma separated)</Label>
+          <Input
+            id="li-makes"
+            value={form.supportedMakes}
+            onChange={(e) => setForm((f) => ({ ...f, supportedMakes: e.target.value }))}
+            placeholder="Chevrolet, Ford, Dodge, Toyota…"
+            data-testid="input-listing-makes"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="li-hero">Hero image URL (optional)</Label>
+          <Input
+            id="li-hero"
+            value={form.heroImage}
+            onChange={(e) => setForm((f) => ({ ...f, heroImage: e.target.value }))}
+            placeholder="https://…"
+            data-testid="input-listing-hero"
+          />
+        </div>
+        <label className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${form.dynoAvailable ? "border-primary/40 bg-primary/5" : "border-border bg-card/40"}`}>
+          <Checkbox
+            checked={form.dynoAvailable}
+            onCheckedChange={(v) => setForm((f) => ({ ...f, dynoAvailable: v === true }))}
+            data-testid="checkbox-listing-dyno"
+          />
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Gauge className="h-4 w-4" /> Dyno available
+          </div>
+        </label>
+        <label className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${form.remoteAvailable ? "border-primary/40 bg-primary/5" : "border-border bg-card/40"}`}>
+          <Checkbox
+            checked={form.remoteAvailable}
+            onCheckedChange={(v) => setForm((f) => ({ ...f, remoteAvailable: v === true }))}
+            data-testid="checkbox-listing-remote"
+          />
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Wifi className="h-4 w-4" /> Remote tuning
+          </div>
+        </label>
+      </div>
+
+      <div className="mt-6 flex justify-end">
+        <Button
+          onClick={() => save.mutate()}
+          disabled={save.isPending || !form.shopName.trim() || !form.location.trim()}
+          data-testid="button-save-listing"
+        >
+          {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          {isCreate ? "Create profile" : "Save changes"}
         </Button>
       </div>
     </Card>

@@ -61,6 +61,7 @@ export interface IStorage {
   getListingWithDetails(id: number): Promise<ListingWithDetails | undefined>;
   getVisibleListingsWithDetails(): Promise<ListingWithDetails[]>;
   updateListing(id: number, patch: Partial<TunerListing>): Promise<TunerListing | undefined>;
+  createListing(data: InsertListing): Promise<TunerListing>;
   // services
   getServicesByListing(listingId: number): Promise<Service[]>;
   createService(s: InsertService): Promise<Service>;
@@ -159,6 +160,11 @@ export class DatabaseStorage implements IStorage {
       .set(patch)
       .where(eq(tunerListings.id, id))
       .returning();
+    return rows[0];
+  }
+
+  async createListing(data: InsertListing) {
+    const rows = await db.insert(tunerListings).values(data).returning();
     return rows[0];
   }
 
