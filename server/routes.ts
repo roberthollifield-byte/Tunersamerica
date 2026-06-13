@@ -454,8 +454,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           customer_email: user.email,
           client_reference_id: String(user.id),
           metadata: { kind: "buyer_pass", userId: String(user.id) },
-          success_url: `${siteUrl()}/#/account?pass=success`,
-          cancel_url: `${siteUrl()}/#/tuners?pass=cancelled`,
+          success_url: `${siteUrl()}/#/dashboard/customer?pass=success`,
+          cancel_url: `${siteUrl()}/#/dashboard/customer?pass=cancelled`,
         });
         return res.json({ ok: true, url: session.url, sessionId: session.id });
       } catch (e: any) {
