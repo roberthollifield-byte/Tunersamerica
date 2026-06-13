@@ -17,6 +17,7 @@ import {
   ECUS,
   FUELS,
   INDUCTION,
+  APPLICATIONS,
 } from "@shared/schema";
 import { z } from "zod";
 import {
@@ -736,6 +737,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       ecu: ECUS,
       fuel: FUELS,
       induction: INDUCTION,
+      application: APPLICATIONS,
     };
 
     const capSchema = z.object({

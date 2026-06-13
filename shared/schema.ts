@@ -88,13 +88,14 @@ export const insertServiceSchema = createInsertSchema(services).omit({ id: true 
 export type InsertService = z.infer<typeof insertServiceSchema>;
 export type Service = typeof services.$inferSelect;
 
-/* ---------------- Capabilities (5 groups) ---------------- */
+/* ---------------- Capabilities (6 groups) ---------------- */
 export const capabilityGroups = [
   "tuning_type",
   "engine",
   "ecu",
   "fuel",
   "induction",
+  "application",
 ] as const;
 export type CapabilityGroup = (typeof capabilityGroups)[number];
 
@@ -109,6 +110,7 @@ export const ECUS = [
 ] as const;
 export const FUELS = ["Pump gas", "E85", "Methanol"] as const;
 export const INDUCTION = ["Turbo", "Supercharger", "NA", "Nitrous"] as const;
+export const APPLICATIONS = ["Drag", "Drift", "Cruiser", "Road race", "Top speed"] as const;
 
 export const tunerCapabilities = pgTable("tuner_capabilities", {
   id: serial("id").primaryKey(),

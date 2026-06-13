@@ -15,7 +15,7 @@ import {
   Wifi, Gauge, Stethoscope, Cpu, Cog, Wrench, Flag, ShieldCheck, Search,
   Star, ArrowRight, BadgeCheck, Quote,
 } from "lucide-react";
-import dyno from "@/assets/hero-dyno.png";
+import { HeroSlideshow } from "@/components/HeroSlideshow";
 import ecu from "@/assets/hero-ecu.png";
 
 const SERVICES = [
@@ -121,9 +121,7 @@ export default function Home() {
             </div>
           </div>
           <div className="relative">
-            <div className="overflow-hidden rounded-2xl border border-card-border">
-              <img src={dyno} alt="Performance car on a chassis dyno" className="h-56 w-full object-cover md:h-64" />
-            </div>
+            <HeroSlideshow />
             <div className="mt-4"><SearchShell /></div>
           </div>
         </div>

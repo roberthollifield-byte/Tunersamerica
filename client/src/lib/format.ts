@@ -25,6 +25,7 @@ import {
   ECUS as _ECUS,
   FUELS as _FUELS,
   INDUCTION as _INDUCTION,
+  APPLICATIONS as _APPLICATIONS,
 } from "@shared/schema";
 
 export const TUNING_TYPES = _TUNING_TYPES;
@@ -32,6 +33,7 @@ export const ENGINES = _ENGINES;
 export const ECUS = _ECUS;
 export const FUELS = _FUELS;
 export const INDUCTION = _INDUCTION;
+export const APPLICATIONS = _APPLICATIONS;
 
 export const CAPABILITY_GROUPS = [
   { key: "tuning_type", label: "Tuning type", values: TUNING_TYPES, withPrice: true },
@@ -39,6 +41,7 @@ export const CAPABILITY_GROUPS = [
   { key: "ecu",         label: "ECU",         values: ECUS,         withPrice: false },
   { key: "fuel",        label: "Fuel",        values: FUELS,        withPrice: false },
   { key: "induction",   label: "Induction",   values: INDUCTION,    withPrice: false },
+  { key: "application", label: "Application", values: APPLICATIONS, withPrice: false },
 ] as const;
 
 export const TUNING_TYPE_LABELS: Record<string, string> = {
