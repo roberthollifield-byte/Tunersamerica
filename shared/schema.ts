@@ -102,13 +102,13 @@ export type CapabilityGroup = (typeof capabilityGroups)[number];
 export const TUNING_TYPES = ["dyno", "street", "track", "remote"] as const;
 export const ENGINES = [
   "LS", "LT", "SBF", "BBC", "BBF", "2JZ", "SR20",
-  "Duramax", "Cummins", "Hemi", "Coyote", "Mod Motor", "K-Series",
+  "Duramax", "Cummins", "Power Stroke", "Hemi", "Coyote", "Mod Motor", "K-Series",
 ] as const;
 export const ECUS = [
   "OEM", "Holley EFI", "FuelTech", "Haltech", "MegaSquirt",
   "Speeduino", "MoTeC", "Bosch", "Hondata",
 ] as const;
-export const FUELS = ["Pump gas", "E85", "Methanol"] as const;
+export const FUELS = ["Pump gas", "E85", "Methanol", "Diesel"] as const;
 export const INDUCTION = ["Turbo", "Supercharger", "NA", "Nitrous"] as const;
 export const APPLICATIONS = ["Drag", "Drift", "Cruiser", "Road race", "Top speed"] as const;
 
