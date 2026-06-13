@@ -4,6 +4,11 @@ import img1 from "@/assets/hero-slideshow/IMG_3230.jpg";
 import img3 from "@/assets/hero-slideshow/IMG_2839.jpg";
 import img4 from "@/assets/hero-slideshow/IMG_2816.jpg";
 import img5 from "@/assets/hero-slideshow/IMG_2784.jpg";
+import newFox from "@/assets/hero-slideshow/new5_babyshark_foxbody.jpeg";
+import newEngineRed from "@/assets/hero-slideshow/new1_engine_red.jpeg";
+import newCobra from "@/assets/hero-slideshow/new2_cobra_supercharger.jpeg";
+import newF150 from "@/assets/hero-slideshow/new3_f150_turbo.jpeg";
+import newTeal from "@/assets/hero-slideshow/new4_teal_supercharger.jpeg";
 import vid1 from "@/assets/hero-slideshow/clip1.mp4";
 import vid2 from "@/assets/hero-slideshow/clip2.mp4";
 
@@ -11,13 +16,20 @@ type Slide =
   | { kind: "image"; src: string; alt: string }
   | { kind: "video"; src: string; alt: string };
 
-// Interleave images and videos for visual variety.
+// Interleave images and videos for visual variety. New customer builds
+// alternated with originals so the rotation never shows two similar shots
+// back-to-back.
 const SLIDES: Slide[] = [
-  { kind: "image", src: img1, alt: "Tuned build" },
+  { kind: "image", src: newFox, alt: "Foxbody drag car" },
   { kind: "video", src: vid1, alt: "Build clip" },
+  { kind: "image", src: img1, alt: "Tuned build" },
+  { kind: "image", src: newCobra, alt: "SVT Cobra supercharger build" },
   { kind: "image", src: img3, alt: "Tuned build" },
+  { kind: "image", src: newF150, alt: "Turbo F-150 build" },
   { kind: "video", src: vid2, alt: "Build clip" },
+  { kind: "image", src: newEngineRed, alt: "Supercharged engine bay" },
   { kind: "image", src: img4, alt: "Tuned build" },
+  { kind: "image", src: newTeal, alt: "Foxbody Mustang supercharger build" },
   { kind: "image", src: img5, alt: "Tuned build" },
 ];
 
