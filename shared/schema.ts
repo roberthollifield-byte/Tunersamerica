@@ -108,7 +108,7 @@ export const ECUS = [
   "Speeduino", "MoTeC", "Bosch", "Hondata",
 ] as const;
 export const FUELS = ["Pump gas", "E85", "Methanol"] as const;
-export const INDUCTION = ["Turbo", "Supercharger", "NA"] as const;
+export const INDUCTION = ["Turbo", "Supercharger", "NA", "Nitrous"] as const;
 
 export const tunerCapabilities = pgTable("tuner_capabilities", {
   id: serial("id").primaryKey(),
