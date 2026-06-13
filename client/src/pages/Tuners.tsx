@@ -14,6 +14,15 @@ import { SlidersHorizontal, SearchX } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { usePassGate, PassPaywall } from "@/lib/pass";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useListingDistances } from "@/lib/useDistance";
+import { DISTANCE_OPTIONS } from "@/lib/distance";
 
 function useQueryParams() {
   const [params, setParams] = useState(
@@ -54,9 +63,10 @@ export default function Tuners() {
   });
 
   const [selected, setSelected] = useState<SelectedState>(() => emptySelection());
-  const [location, setLocation] = useState("");
+  const [originZip, setOriginZip] = useState("");
+  const [radius, setRadius] = useState<string>("100");
 
-  // Preselect from URL query params (e.g. ?tuning_type=remote)
+  // Preselect from URL query params (e.g. ?tuning_type=remote, ?zip=28043, ?radius=100)
   useEffect(() => {
     const next = emptySelection();
     for (const g of CAPABILITY_GROUPS) {
@@ -64,6 +74,10 @@ export default function Tuners() {
       if (v) next[g.key].add(v);
     }
     setSelected(next);
+    const z = params.get("zip");
+    if (z) setOriginZip(z);
+    const r = params.get("radius");
+    if (r) setRadius(r);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
@@ -76,8 +90,16 @@ export default function Tuners() {
     });
   }
 
+  const { annotated, origin, resolving } = useListingDistances(
+    listings,
+    originZip,
+  );
+
+  const radiusMiles =
+    DISTANCE_OPTIONS.find((d) => d.value === radius)?.miles ?? null;
+
   const filtered = useMemo(() => {
-    let list = listings ?? [];
+    let list = annotated;
     for (const g of CAPABILITY_GROUPS) {
       const sel = selected[g.key];
       if (sel.size === 0) continue;
@@ -87,21 +109,31 @@ export default function Tuners() {
         ),
       );
     }
-    if (location.trim()) {
-      const needle = location.trim().toLowerCase();
-      list = list.filter((l) => l.location.toLowerCase().includes(needle));
+    if (origin && radiusMiles != null) {
+      list = list.filter(
+        (l) => l.distanceMiles != null && l.distanceMiles <= radiusMiles,
+      );
+    }
+    // Sort by distance when we have an origin
+    if (origin) {
+      list = [...list].sort((a, b) => {
+        const ad = a.distanceMiles ?? Number.POSITIVE_INFINITY;
+        const bd = b.distanceMiles ?? Number.POSITIVE_INFINITY;
+        return ad - bd;
+      });
     }
     return list;
-  }, [listings, selected, location]);
+  }, [annotated, selected, origin, radiusMiles]);
 
   function reset() {
     setSelected(emptySelection());
-    setLocation("");
+    setOriginZip("");
+    setRadius("100");
   }
 
   const activeFilterCount =
     CAPABILITY_GROUPS.reduce((n, g) => n + selected[g.key].size, 0) +
-    (location.trim() ? 1 : 0);
+    (originZip.trim() ? 1 : 0);
 
   return (
     <Layout>
@@ -147,18 +179,52 @@ export default function Tuners() {
                 <div>
                   <Label
                     className="text-xs text-muted-foreground"
-                    htmlFor="filter-location"
+                    htmlFor="filter-zip"
                   >
-                    Location
+                    Your ZIP code
                   </Label>
                   <Input
-                    id="filter-location"
+                    id="filter-zip"
                     className="mt-1.5"
-                    placeholder="City or state"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    data-testid="input-filter-location"
+                    placeholder="e.g. 28043"
+                    inputMode="numeric"
+                    maxLength={5}
+                    value={originZip}
+                    onChange={(e) =>
+                      setOriginZip(e.target.value.replace(/[^0-9]/g, ""))
+                    }
+                    data-testid="input-filter-zip"
                   />
+                  <div className="mt-3">
+                    <Label className="text-xs text-muted-foreground">
+                      Distance
+                    </Label>
+                    <Select value={radius} onValueChange={setRadius}>
+                      <SelectTrigger
+                        className="mt-1.5"
+                        data-testid="select-filter-radius"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DISTANCE_OPTIONS.map((d) => (
+                          <SelectItem key={d.value} value={d.value}>
+                            {d.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {originZip.trim() && !origin && !resolving && (
+                    <p className="mt-2 text-xs text-amber-500">
+                      Couldn't locate that ZIP. Check it and try again.
+                    </p>
+                  )}
+                  {resolving && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Locating…
+                    </p>
+                  )}
                 </div>
 
                 {CAPABILITY_GROUPS.map((g) => (
@@ -224,7 +290,7 @@ export default function Tuners() {
                     No tuners match those filters
                   </div>
                   <p className="max-w-sm text-sm text-muted-foreground">
-                    Try removing a filter or clearing the location.
+                    Try expanding your distance or removing a filter.
                   </p>
                   <Button
                     variant="outline"

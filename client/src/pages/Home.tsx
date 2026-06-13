@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { HeroSlideshow } from "@/components/HeroSlideshow";
 import ecu from "@/assets/hero-ecu.png";
+import { DISTANCE_OPTIONS } from "@/lib/distance";
 
 const SERVICES = [
   { icon: Wifi, name: "Remote tuning", desc: "File reads, datalog review, revisions, and final tune delivery — wherever your car lives." },
@@ -31,12 +32,14 @@ function SearchShell() {
   const [, navigate] = useLocation();
   const [service, setService] = useState("");
   const [mode, setMode] = useState("");
-  const [location, setLocation] = useState("");
+  const [zip, setZip] = useState("");
+  const [radius, setRadius] = useState("100");
   function submit() {
     const params = new URLSearchParams();
     if (service) params.set("service", service);
     if (mode) params.set("mode", mode);
-    if (location.trim()) params.set("location", location.trim());
+    if (zip.trim()) params.set("zip", zip.trim());
+    if (radius) params.set("radius", radius);
     navigate(`/tuners${params.toString() ? "?" + params.toString() : ""}`);
   }
   return (
@@ -44,7 +47,7 @@ function SearchShell() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="font-semibold">Find a specialist</div>
-          <div className="text-sm text-muted-foreground">Search by service and availability</div>
+          <div className="text-sm text-muted-foreground">Search by service and distance</div>
         </div>
         <Badge className="bg-primary/15 text-primary">Fast match</Badge>
       </div>
@@ -64,12 +67,21 @@ function SearchShell() {
           </SelectContent>
         </Select>
         <Input
-          placeholder="Location (city or ZIP)"
-          className="sm:col-span-2"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          data-testid="input-home-location"
+          placeholder="Your ZIP code"
+          inputMode="numeric"
+          maxLength={5}
+          value={zip}
+          onChange={(e) => setZip(e.target.value.replace(/[^0-9]/g, ""))}
+          data-testid="input-home-zip"
         />
+        <Select value={radius} onValueChange={setRadius}>
+          <SelectTrigger data-testid="select-home-radius"><SelectValue placeholder="Distance" /></SelectTrigger>
+          <SelectContent>
+            {DISTANCE_OPTIONS.map((d) => (
+              <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <Button className="mt-4 w-full" onClick={submit} data-testid="button-search-tuners">
         <Search className="mr-2 h-4 w-4" /> Search Tuners
