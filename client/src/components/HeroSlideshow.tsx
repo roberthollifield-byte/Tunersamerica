@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
 import img1 from "@/assets/hero-slideshow/IMG_3230.jpg";
-import img2 from "@/assets/hero-slideshow/c9a6be019dc296f381a07a9513b7bcfd.jpg";
 import img3 from "@/assets/hero-slideshow/IMG_2839.jpg";
 import img4 from "@/assets/hero-slideshow/IMG_2816.jpg";
 import img5 from "@/assets/hero-slideshow/IMG_2784.jpg";
@@ -16,28 +15,47 @@ type Slide =
 const SLIDES: Slide[] = [
   { kind: "image", src: img1, alt: "Tuned build" },
   { kind: "video", src: vid1, alt: "Build clip" },
-  { kind: "image", src: img2, alt: "Tuned build" },
   { kind: "image", src: img3, alt: "Tuned build" },
   { kind: "video", src: vid2, alt: "Build clip" },
   { kind: "image", src: img4, alt: "Tuned build" },
   { kind: "image", src: img5, alt: "Tuned build" },
 ];
 
-const SLIDE_MS = 3000;
+const IMAGE_SLIDE_MS = 3500;
 
 export function HeroSlideshow() {
   const [index, setIndex] = useState(0);
   const timerRef = useRef<number | null>(null);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
+  const current = SLIDES[index];
+
+  // Advance images on a timer; videos advance when they finish playing (see onEnded).
   useEffect(() => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => {
-      setIndex((i) => (i + 1) % SLIDES.length);
-    }, SLIDE_MS);
+    if (current.kind === "image") {
+      timerRef.current = window.setTimeout(() => {
+        setIndex((i) => (i + 1) % SLIDES.length);
+      }, IMAGE_SLIDE_MS);
+    }
     return () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
     };
-  }, [index]);
+  }, [index, current.kind]);
+
+  // Restart the active video from the beginning so the full clip plays each rotation.
+  useEffect(() => {
+    if (current.kind !== "video") return;
+    const v = videoRefs.current[index];
+    if (!v) return;
+    try {
+      v.currentTime = 0;
+      const p = v.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {
+      // ignore autoplay errors
+    }
+  }, [index, current.kind]);
 
   return (
     <div
@@ -61,13 +79,18 @@ export function HeroSlideshow() {
             />
           ) : (
             <video
+              ref={(el) => {
+                videoRefs.current[i] = el;
+              }}
               src={s.src}
               className="h-full w-full object-cover"
               muted
-              loop
               playsInline
-              autoPlay
+              autoPlay={i === index}
               preload="metadata"
+              onEnded={() => {
+                if (i === index) setIndex((idx) => (idx + 1) % SLIDES.length);
+              }}
             />
           )}
         </div>
