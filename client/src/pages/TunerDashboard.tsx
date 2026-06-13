@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { money, parseMakes, CAPABILITY_GROUPS, capabilityLabel } from "@/lib/format";
 import { LeaveReviewDialog } from "@/components/LeaveReviewDialog";
+import { ImageUpload } from "@/components/ImageUpload";
 import { PromoRedeemBox } from "@/lib/promo";
 import {
   Store, Wrench, Calendar, DollarSign, CreditCard, Link2,
@@ -618,13 +619,13 @@ function ListingEditor({
           />
         </div>
         <div className="sm:col-span-2">
-          <Label htmlFor="li-hero">Hero image URL (optional)</Label>
-          <Input
-            id="li-hero"
+          <ImageUpload
+            label="Shop photo"
+            buttonLabel="Upload shop photo"
+            helper="This is the photo drivers see on your card and at the top of your public profile. JPG or PNG, up to ~6 MB. We resize automatically."
             value={form.heroImage}
-            onChange={(e) => setForm((f) => ({ ...f, heroImage: e.target.value }))}
-            placeholder="https://…"
-            data-testid="input-listing-hero"
+            onChange={(v) => setForm((f) => ({ ...f, heroImage: v }))}
+            testId="input-listing-hero"
           />
         </div>
         <label className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${form.dynoAvailable ? "border-primary/40 bg-primary/5" : "border-border bg-card/40"}`}>
