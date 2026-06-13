@@ -64,7 +64,7 @@ export const insertListingSchema = createInsertSchema(tunerListings).omit({
 export type InsertListing = z.infer<typeof insertListingSchema>;
 export type TunerListing = typeof tunerListings.$inferSelect;
 
-/* ---------------- Services ---------------- */
+/* ---------------- Services (legacy — kept for booking backwards-compat) ---------------- */
 export const serviceCategories = [
   "remote",
   "dyno",
@@ -87,6 +87,39 @@ export const services = pgTable("services", {
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true });
 export type InsertService = z.infer<typeof insertServiceSchema>;
 export type Service = typeof services.$inferSelect;
+
+/* ---------------- Capabilities (5 groups) ---------------- */
+export const capabilityGroups = [
+  "tuning_type",
+  "engine",
+  "ecu",
+  "fuel",
+  "induction",
+] as const;
+export type CapabilityGroup = (typeof capabilityGroups)[number];
+
+export const TUNING_TYPES = ["dyno", "street", "track", "remote"] as const;
+export const ENGINES = [
+  "LS", "LT", "SBF", "BBC", "BBF", "2JZ", "SR20",
+  "Duramax", "Cummins", "Hemi", "Coyote", "Mod Motor", "K-Series",
+] as const;
+export const ECUS = [
+  "OEM", "Holley EFI", "FuelTech", "Haltech", "MegaSquirt",
+  "Speeduino", "MoTeC", "Bosch", "Hondata",
+] as const;
+export const FUELS = ["Pump gas", "E85", "Methanol"] as const;
+export const INDUCTION = ["Turbo", "Supercharger", "NA"] as const;
+
+export const tunerCapabilities = pgTable("tuner_capabilities", {
+  id: serial("id").primaryKey(),
+  listingId: integer("listing_id").notNull(),
+  groupName: text("group_name").notNull(), // capabilityGroups value
+  value: text("value").notNull(),           // e.g. "dyno", "LS", "Holley EFI"
+  price: integer("price"),                  // only set for tuning_type rows (starting $)
+});
+
+export type TunerCapability = typeof tunerCapabilities.$inferSelect;
+export type InsertCapability = Omit<TunerCapability, "id">;
 
 /* ---------------- Vehicles ---------------- */
 export const vehicles = pgTable("vehicles", {
@@ -144,12 +177,21 @@ export const createBookingSchema = z.object({
 export type CreateBooking = z.infer<typeof createBookingSchema>;
 export type Booking = typeof bookings.$inferSelect;
 
-/* ---------------- Reviews ---------------- */
+/* ---------------- Reviews (two-way, booking-gated) ---------------- */
+// direction = 'customer_to_tuner' (legacy: listing-targeted) OR 'tuner_to_customer'
+export const reviewDirections = ["customer_to_tuner", "tuner_to_customer"] as const;
+export type ReviewDirection = (typeof reviewDirections)[number];
+
 export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),
   bookingId: integer("booking_id"),
+  // Legacy: customer leaving a review on a tuner listing.
   customerId: integer("customer_id").notNull(),
   listingId: integer("listing_id").notNull(),
+  // New (nullable for legacy rows):
+  authorUserId: integer("author_user_id"),   // who wrote the review
+  revieweeUserId: integer("reviewee_user_id"), // who is being reviewed
+  direction: text("direction"),                 // reviewDirections value
   rating: integer("rating").notNull(),
   comment: text("comment").notNull(),
   authorName: text("author_name").notNull().default("Customer"),
@@ -162,6 +204,14 @@ export const insertReviewSchema = createInsertSchema(reviews).omit({
 });
 export type InsertReview = z.infer<typeof insertReviewSchema>;
 export type Review = typeof reviews.$inferSelect;
+
+// Client-submitted review (booking-gated). Server resolves direction + identities.
+export const createReviewSchema = z.object({
+  bookingId: z.number(),
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().min(1).max(2000),
+});
+export type CreateReview = z.infer<typeof createReviewSchema>;
 
 /* ---------------- Subscriptions ---------------- */
 export const subscriptions = pgTable("subscriptions", {
@@ -206,5 +256,15 @@ export type PromoRedemption = typeof promoRedemptions.$inferSelect;
 export type ListingWithDetails = TunerListing & {
   services: Service[];
   reviews: Review[];
+  capabilities: TunerCapability[];
   tunerName: string;
+};
+
+export type DriverProfile = {
+  id: number;
+  name: string;
+  vehicles: Vehicle[];
+  reviews: Review[];
+  rating: number;       // average x10 (e.g. 48 = 4.8); 0 if no reviews
+  reviewCount: number;
 };

@@ -9,7 +9,14 @@ import {
   insertVehicleSchema,
   insertServiceSchema,
   insertReviewSchema,
+  createReviewSchema,
   serviceCategories,
+  capabilityGroups,
+  TUNING_TYPES,
+  ENGINES,
+  ECUS,
+  FUELS,
+  INDUCTION,
 } from "@shared/schema";
 import { z } from "zod";
 import {
@@ -639,12 +646,122 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  /* ---------- Reviews ---------- */
+  /* ---------- Reviews (two-way, booking-gated) ---------- */
 
+  // Submit a review for a completed booking.
+  // The author must be either the customer or the tuner of the booking.
   app.post("/api/reviews", async (req: Request, res: Response) => {
-    const parsed = insertReviewSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: "Invalid review" });
-    res.json(await storage.createReview(parsed.data));
+    const token = (req.body?.token as string | undefined) || (req.query.token as string | undefined);
+    const user = token ? await storage.getUserByToken(token) : undefined;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+    const parsed = createReviewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid review" });
+    }
+    const { bookingId, rating, comment } = parsed.data;
+
+    const booking = await storage.getBooking(bookingId);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+    if (booking.status !== "completed") {
+      return res.status(400).json({ message: "You can only review a completed booking." });
+    }
+
+    let direction: "customer_to_tuner" | "tuner_to_customer";
+    let revieweeUserId: number;
+    if (user.id === booking.customerId) {
+      direction = "customer_to_tuner";
+      revieweeUserId = booking.tunerId;
+    } else if (user.id === booking.tunerId) {
+      direction = "tuner_to_customer";
+      revieweeUserId = booking.customerId;
+    } else {
+      return res.status(403).json({ message: "You weren't part of this booking." });
+    }
+
+    // One review per direction per booking.
+    const existing = await storage.getReviewByBookingDirection(bookingId, direction);
+    if (existing) {
+      return res.status(409).json({ message: "You've already reviewed this booking." });
+    }
+
+    const created = await storage.createReview({
+      bookingId,
+      customerId: booking.customerId,
+      listingId: booking.listingId,
+      authorUserId: user.id,
+      revieweeUserId,
+      direction,
+      rating,
+      comment,
+      authorName: user.name,
+    } as any);
+    res.json(created);
+  });
+
+  // Public driver profile — anyone with an active pass can see it.
+  app.get("/api/drivers/:id", async (req: Request, res: Response) => {
+    const user = await requireActivePass(req, res);
+    if (!user) return;
+    const profile = await storage.getDriverProfile(Number(req.params.id));
+    if (!profile) return res.status(404).json({ message: "Driver not found" });
+    res.json(profile);
+  });
+
+  /* ---------- Capabilities ---------- */
+
+  // Read current tuner's capabilities (auth via session token).
+  app.get("/api/me/capabilities", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    const user = token ? await storage.getUserByToken(token) : undefined;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "tuner") return res.status(403).json({ message: "Tuner only" });
+    const listing = await storage.getListingByUserId(user.id);
+    if (!listing) return res.json([]);
+    res.json(await storage.getCapabilitiesByListing(listing.id));
+  });
+
+  // Replace current tuner's capabilities in one shot.
+  app.put("/api/me/capabilities", async (req: Request, res: Response) => {
+    const token = (req.body?.token as string | undefined) || (req.query.token as string | undefined);
+    const user = token ? await storage.getUserByToken(token) : undefined;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "tuner") return res.status(403).json({ message: "Tuner only" });
+    const listing = await storage.getListingByUserId(user.id);
+    if (!listing) return res.status(404).json({ message: "No listing found for this account." });
+
+    const allowed: Record<string, readonly string[]> = {
+      tuning_type: TUNING_TYPES,
+      engine: ENGINES,
+      ecu: ECUS,
+      fuel: FUELS,
+      induction: INDUCTION,
+    };
+
+    const capSchema = z.object({
+      capabilities: z.array(z.object({
+        groupName: z.enum(capabilityGroups as unknown as [string, ...string[]]),
+        value: z.string().min(1).max(40),
+        price: z.number().int().min(0).max(1_000_000).nullable().optional(),
+      })).max(80),
+    });
+    const parsed = capSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.issues[0]?.message || "Invalid capabilities" });
+    }
+
+    // Filter to known values for each group.
+    const clean = parsed.data.capabilities.filter((c) => allowed[c.groupName]?.includes(c.value));
+    // Only tuning_type rows may carry a price.
+    const normalized = clean.map((c) => ({
+      groupName: c.groupName,
+      value: c.value,
+      price: c.groupName === "tuning_type" ? (c.price ?? null) : null,
+      listingId: listing.id,
+    }));
+
+    const rows = await storage.replaceCapabilities(listing.id, normalized as any);
+    res.json({ ok: true, capabilities: rows });
   });
 
   /* ---------- Stripe ---------- */

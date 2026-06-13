@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Lock, Check, Sparkles } from "lucide-react";
 import { money } from "@/lib/format";
 import { Car, Calendar, MessageSquare, Plus, Loader2 } from "lucide-react";
+import { LeaveReviewDialog } from "@/components/LeaveReviewDialog";
 
 const STATUS_COLOR: Record<string, string> = {
   requested: "bg-amber-500/15 text-amber-400",
@@ -128,6 +129,14 @@ export default function CustomerDashboard() {
                     <div className="flex items-center gap-3">
                       <Badge className={STATUS_COLOR[b.status]}>{b.status.replace("_", " ")}</Badge>
                       {b.paid ? <Badge variant="outline">Paid</Badge> : <Badge variant="outline">Unpaid</Badge>}
+                      {b.status === "completed" && (
+                        <LeaveReviewDialog
+                          bookingId={b.id}
+                          subject={b.shopName || "this tuner"}
+                          triggerLabel="Review tuner"
+                          invalidateKeys={[["/api/bookings", "customer", user?.id]]}
+                        />
+                      )}
                     </div>
                   </Card>
                 ))}

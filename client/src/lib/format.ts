@@ -18,6 +18,41 @@ export const CATEGORY_LABELS: Record<string, string> = {
   race_setup: "Race setup",
 };
 
+// ===== Capability groups (5) — source of truth for UI =====
+import {
+  TUNING_TYPES as _TUNING_TYPES,
+  ENGINES as _ENGINES,
+  ECUS as _ECUS,
+  FUELS as _FUELS,
+  INDUCTION as _INDUCTION,
+} from "@shared/schema";
+
+export const TUNING_TYPES = _TUNING_TYPES;
+export const ENGINES = _ENGINES;
+export const ECUS = _ECUS;
+export const FUELS = _FUELS;
+export const INDUCTION = _INDUCTION;
+
+export const CAPABILITY_GROUPS = [
+  { key: "tuning_type", label: "Tuning type", values: TUNING_TYPES, withPrice: true },
+  { key: "engine",      label: "Engine",      values: ENGINES,      withPrice: false },
+  { key: "ecu",         label: "ECU",         values: ECUS,         withPrice: false },
+  { key: "fuel",        label: "Fuel",        values: FUELS,        withPrice: false },
+  { key: "induction",   label: "Induction",   values: INDUCTION,    withPrice: false },
+] as const;
+
+export const TUNING_TYPE_LABELS: Record<string, string> = {
+  dyno: "Dyno",
+  street: "Street",
+  track: "Track",
+  remote: "Remote",
+};
+
+export function capabilityLabel(group: string, value: string): string {
+  if (group === "tuning_type") return TUNING_TYPE_LABELS[value] ?? value;
+  return value;
+}
+
 export const PLATFORMS = [
   { key: "GM", label: "GM / LS", blurb: "LS & LT swaps, boosted street cars" },
   { key: "Ford", label: "Ford", blurb: "Coyote, EcoBoost, Power Stroke" },

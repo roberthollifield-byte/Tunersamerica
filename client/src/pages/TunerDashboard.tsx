@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import type { ListingWithDetails } from "@shared/schema";
+import type { ListingWithDetails, TunerCapability } from "@shared/schema";
 import { Layout, Section } from "@/components/Layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,22 +15,17 @@ import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import { money, CATEGORY_LABELS, parseMakes } from "@/lib/format";
+import { money, parseMakes, CAPABILITY_GROUPS, capabilityLabel } from "@/lib/format";
+import { LeaveReviewDialog } from "@/components/LeaveReviewDialog";
 import { PromoRedeemBox } from "@/lib/promo";
 import {
   Store, Wrench, Calendar, DollarSign, CreditCard, Link2,
   Loader2, CheckCircle2, AlertTriangle, Gauge, Wifi, Save,
 } from "lucide-react";
 
-// Default name + description shown when a tuner first enables a service category.
-const SERVICE_DEFAULTS: Record<string, { name: string; description: string; price: number }> = {
-  remote: { name: "Remote tuning", description: "File reads, datalog review, and tune revisions delivered remotely.", price: 350 },
-  dyno: { name: "Dyno tuning", description: "Full in-person dyno calibration session.", price: 800 },
-  diagnostics: { name: "Diagnostics", description: "Drivability and fault diagnosis with log review.", price: 150 },
-  ecu: { name: "ECU calibration", description: "Engine ECU calibration for supported platforms.", price: 500 },
-  tcm: { name: "TCM calibration", description: "Transmission control module tuning.", price: 400 },
-  build_support: { name: "Build support", description: "Hardware, injector, fuel-system, and boost setup guidance.", price: 250 },
-  race_setup: { name: "Race setup", description: "Track and drag-strip dedicated calibrations.", price: 1200 },
+// Default starting prices for tuning-type rows.
+const TUNING_TYPE_PRICE_DEFAULTS: Record<string, number> = {
+  dyno: 800, street: 400, track: 1200, remote: 350,
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -134,7 +129,7 @@ export default function TunerDashboard() {
         <Tabs defaultValue="listing" className="mt-8">
           <TabsList className="flex-wrap">
             <TabsTrigger value="listing" data-testid="tab-listing"><Store className="mr-2 h-4 w-4" />Listing</TabsTrigger>
-            <TabsTrigger value="services" data-testid="tab-services"><Wrench className="mr-2 h-4 w-4" />Services & Pricing</TabsTrigger>
+            <TabsTrigger value="services" data-testid="tab-services"><Wrench className="mr-2 h-4 w-4" />Capabilities</TabsTrigger>
             <TabsTrigger value="bookings" data-testid="tab-tuner-bookings"><Calendar className="mr-2 h-4 w-4" />Bookings</TabsTrigger>
             <TabsTrigger value="earnings" data-testid="tab-earnings"><DollarSign className="mr-2 h-4 w-4" />Earnings</TabsTrigger>
             <TabsTrigger value="subscription" data-testid="tab-subscription"><CreditCard className="mr-2 h-4 w-4" />Subscription</TabsTrigger>
@@ -166,10 +161,10 @@ export default function TunerDashboard() {
             ) : <Card className="p-12 text-center text-muted-foreground">No listing found for this account.</Card>}
           </TabsContent>
 
-          {/* Services */}
+          {/* Capabilities */}
           <TabsContent value="services" className="mt-6">
             {listing ? (
-              <ServicesEditor listing={listing} token={token!} />
+              <CapabilitiesEditor listing={listing} token={token!} />
             ) : <Card className="p-12 text-center text-muted-foreground">No listing yet — create your shop profile first.</Card>}
           </TabsContent>
 
@@ -192,6 +187,14 @@ export default function TunerDashboard() {
                         <Button size="sm" variant="outline" onClick={() => advance.mutate({ id: b.id, status: NEXT_STATUS[b.status] })} data-testid={`button-advance-${b.id}`}>
                           Mark {NEXT_STATUS[b.status].replace("_", " ")}
                         </Button>
+                      )}
+                      {b.status === "completed" && (
+                        <LeaveReviewDialog
+                          bookingId={b.id}
+                          subject={b.customerName || "this driver"}
+                          triggerLabel="Review driver"
+                          invalidateKeys={[["/api/bookings", "tuner", user?.id]]}
+                        />
                       )}
                     </div>
                   </Card>
@@ -277,182 +280,161 @@ export default function TunerDashboard() {
   );
 }
 
-/* ------------- Services editor ------------- */
+/* ------------- Capabilities editor ------------- */
 
-type EditableService = {
-  category: string;
-  enabled: boolean;
-  name: string;
-  description: string;
-  price: number;
+type CapState = {
+  // For each group, a Set of selected values. Plus a price map for tuning_type.
+  selected: Record<string, Set<string>>;
+  prices: Record<string, number>; // keyed by tuning_type value, e.g. dyno -> 800
 };
 
-function buildInitialRows(listing: ListingWithDetails): EditableService[] {
-  const byCategory = new Map<string, ListingWithDetails["services"][number]>();
-  for (const s of listing.services) byCategory.set(s.category, s);
-  return Object.keys(CATEGORY_LABELS).map((cat) => {
-    const existing = byCategory.get(cat);
-    const def = SERVICE_DEFAULTS[cat] || { name: CATEGORY_LABELS[cat], description: "", price: 0 };
-    if (existing) {
-      return {
-        category: cat,
-        enabled: true,
-        name: existing.name,
-        description: existing.description,
-        price: existing.price,
-      };
+function buildInitialState(caps: TunerCapability[]): CapState {
+  const selected: Record<string, Set<string>> = {};
+  const prices: Record<string, number> = {};
+  for (const g of CAPABILITY_GROUPS) selected[g.key] = new Set();
+  for (const c of caps) {
+    if (!selected[c.groupName]) selected[c.groupName] = new Set();
+    selected[c.groupName].add(c.value);
+    if (c.groupName === "tuning_type" && typeof c.price === "number") {
+      prices[c.value] = c.price;
     }
-    return {
-      category: cat,
-      enabled: false,
-      name: def.name,
-      description: def.description,
-      price: def.price,
-    };
-  });
+  }
+  return { selected, prices };
 }
 
-function ServicesEditor({ listing, token }: { listing: ListingWithDetails; token: string }) {
+function CapabilitiesEditor({ listing, token }: { listing: ListingWithDetails; token: string }) {
   const { toast } = useToast();
-  const [rows, setRows] = useState<EditableService[]>(() => buildInitialRows(listing));
 
-  // Re-seed when the underlying listing changes (e.g. after save / refetch).
+  const { data: caps } = useQuery<TunerCapability[]>({
+    queryKey: ["/api/me/capabilities", token],
+    queryFn: async () => (await apiRequest("GET", `/api/me/capabilities?token=${token}`)).json(),
+    enabled: !!token,
+  });
+
+  const [state, setState] = useState<CapState>(() => buildInitialState(caps ?? listing.capabilities ?? []));
+
   useEffect(() => {
-    setRows(buildInitialRows(listing));
-  }, [listing]);
+    setState(buildInitialState(caps ?? listing.capabilities ?? []));
+  }, [caps, listing]);
+
+  function toggle(group: string, value: string) {
+    setState((prev) => {
+      const next: CapState = { selected: { ...prev.selected }, prices: { ...prev.prices } };
+      const set = new Set(next.selected[group]);
+      if (set.has(value)) {
+        set.delete(value);
+        if (group === "tuning_type") delete next.prices[value];
+      } else {
+        set.add(value);
+        if (group === "tuning_type" && next.prices[value] == null) {
+          next.prices[value] = TUNING_TYPE_PRICE_DEFAULTS[value] ?? 0;
+        }
+      }
+      next.selected[group] = set;
+      return next;
+    });
+  }
+
+  function setPrice(value: string, price: number) {
+    setState((prev) => ({ ...prev, prices: { ...prev.prices, [value]: price } }));
+  }
 
   const save = useMutation({
     mutationFn: async () => {
-      const services = rows
-        .filter((r) => r.enabled)
-        .map((r) => ({
-          category: r.category,
-          name: r.name.trim() || CATEGORY_LABELS[r.category],
-          description: r.description.trim(),
-          price: Math.max(0, Math.round(Number(r.price) || 0)),
-        }));
-      const res = await apiRequest("PUT", "/api/me/services", { token, services });
+      const capabilities: { groupName: string; value: string; price?: number | null }[] = [];
+      for (const g of CAPABILITY_GROUPS) {
+        for (const v of Array.from(state.selected[g.key] ?? [])) {
+          if (g.key === "tuning_type") {
+            const p = state.prices[v];
+            capabilities.push({ groupName: g.key, value: v, price: typeof p === "number" ? Math.max(0, Math.round(p)) : null });
+          } else {
+            capabilities.push({ groupName: g.key, value: v });
+          }
+        }
+      }
+      const res = await apiRequest("PUT", "/api/me/capabilities", { token, capabilities });
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Services saved", description: "Your service menu is updated." });
+      toast({ title: "Capabilities saved", description: "Drivers will see your updated capabilities." });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/capabilities", token] });
       queryClient.invalidateQueries({ queryKey: ["/api/me/listing", token] });
       queryClient.invalidateQueries({ queryKey: ["/api/listings"] });
     },
     onError: (err: any) => {
-      toast({
-        title: "Couldn't save services",
-        description: err?.message || "Try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Couldn't save", description: err?.message || "Try again.", variant: "destructive" });
     },
   });
 
-  function update(category: string, patch: Partial<EditableService>) {
-    setRows((prev) => prev.map((r) => (r.category === category ? { ...r, ...patch } : r)));
-  }
-
-  const enabledCount = rows.filter((r) => r.enabled).length;
+  const totalSelected = Object.values(state.selected).reduce((sum, s) => sum + s.size, 0);
 
   return (
     <Card className="p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-display text-lg font-bold">Services you offer</h2>
+          <h2 className="font-display text-lg font-bold">Capabilities</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Toggle the services you provide and set a starting price for each. Drivers see only the
-            services you've enabled.
+            Check every capability your shop offers. These power the search filters drivers use to find you.
           </p>
         </div>
-        <Badge variant="outline" className="text-xs" data-testid="badge-services-count">
-          {enabledCount} {enabledCount === 1 ? "service" : "services"} enabled
+        <Badge variant="outline" className="text-xs" data-testid="badge-capabilities-count">
+          {totalSelected} selected
         </Badge>
       </div>
 
-      <div className="mt-5 space-y-3">
-        {rows.map((r) => (
-          <div
-            key={r.category}
-            className={`rounded-lg border p-4 transition-colors ${
-              r.enabled ? "border-primary/40 bg-primary/5" : "border-border bg-card/40"
-            }`}
-            data-testid={`row-service-${r.category}`}
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              <Checkbox
-                id={`enable-${r.category}`}
-                checked={r.enabled}
-                onCheckedChange={(v) => update(r.category, { enabled: !!v })}
-                data-testid={`checkbox-service-${r.category}`}
-              />
-              <Label htmlFor={`enable-${r.category}`} className="cursor-pointer font-semibold">
-                {CATEGORY_LABELS[r.category]}
-              </Label>
-              <div className="ml-auto flex items-center gap-2">
-                <Label htmlFor={`price-${r.category}`} className="text-xs text-muted-foreground">
-                  Starting at
-                </Label>
-                <div className="flex items-center">
-                  <span className="text-muted-foreground">$</span>
-                  <Input
-                    id={`price-${r.category}`}
-                    type="number"
-                    min={0}
-                    step={25}
-                    disabled={!r.enabled}
-                    value={r.price}
-                    onChange={(e) => update(r.category, { price: Number(e.target.value) })}
-                    className="ml-1 w-28"
-                    data-testid={`input-price-${r.category}`}
-                  />
-                </div>
-              </div>
-            </div>
-            {r.enabled && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_2fr]">
-                <div className="space-y-1.5">
-                  <Label htmlFor={`name-${r.category}`} className="text-xs text-muted-foreground">
-                    Display name
-                  </Label>
-                  <Input
-                    id={`name-${r.category}`}
-                    value={r.name}
-                    onChange={(e) => update(r.category, { name: e.target.value })}
-                    data-testid={`input-name-${r.category}`}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor={`description-${r.category}`}
-                    className="text-xs text-muted-foreground"
+      <div className="mt-6 space-y-6">
+        {CAPABILITY_GROUPS.map((g) => (
+          <div key={g.key} data-testid={`group-${g.key}`}>
+            <h3 className="font-semibold">{g.label}</h3>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {g.values.map((v) => {
+                const checked = state.selected[g.key]?.has(v) ?? false;
+                const id = `cap-${g.key}-${v}`;
+                return (
+                  <div
+                    key={v}
+                    className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${
+                      checked ? "border-primary/40 bg-primary/5" : "border-border bg-card/40"
+                    }`}
+                    data-testid={`row-cap-${g.key}-${v}`}
                   >
-                    Short description
-                  </Label>
-                  <Input
-                    id={`description-${r.category}`}
-                    value={r.description}
-                    onChange={(e) => update(r.category, { description: e.target.value })}
-                    data-testid={`input-description-${r.category}`}
-                  />
-                </div>
-              </div>
-            )}
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={id}
+                        checked={checked}
+                        onCheckedChange={() => toggle(g.key, v)}
+                        data-testid={`checkbox-cap-${g.key}-${v}`}
+                      />
+                      <Label htmlFor={id} className="cursor-pointer text-sm font-medium">
+                        {g.key === "tuning_type" ? capabilityLabel(g.key, v) : v}
+                      </Label>
+                    </div>
+                    {g.key === "tuning_type" && checked && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={25}
+                          value={state.prices[v] ?? 0}
+                          onChange={(e) => setPrice(v, Number(e.target.value))}
+                          className="h-8 w-24"
+                          data-testid={`input-price-${v}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ))}
       </div>
 
       <div className="mt-6 flex justify-end">
-        <Button
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-          data-testid="button-save-services"
-        >
-          {save.isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          Save services
+        <Button onClick={() => save.mutate()} disabled={save.isPending} data-testid="button-save-capabilities">
+          {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Save capabilities
         </Button>
       </div>
     </Card>

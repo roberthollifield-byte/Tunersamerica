@@ -25,6 +25,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Tuners from "@/pages/Tuners";
 import TunerProfile from "@/pages/TunerProfile";
+import DriverProfile from "@/pages/DriverProfile";
 import Services from "@/pages/Services";
 import HowItWorks from "@/pages/HowItWorks";
 import Join from "@/pages/Join";
@@ -43,6 +44,7 @@ function AppRouter() {
       <Route path="/" component={Home} />
       <Route path="/tuners" component={Tuners} />
       <Route path="/tuners/:id" component={TunerProfile} />
+      <Route path="/drivers/:id" component={DriverProfile} />
       <Route path="/services" component={Services} />
       <Route path="/how-it-works" component={HowItWorks} />
       <Route path="/join" component={Join} />

@@ -2,6 +2,7 @@ import {
   users,
   tunerListings,
   services,
+  tunerCapabilities,
   vehicles,
   bookings,
   reviews,
@@ -16,6 +17,8 @@ import type {
   InsertListing,
   Service,
   InsertService,
+  TunerCapability,
+  InsertCapability,
   Vehicle,
   InsertVehicle,
   Booking,
@@ -23,6 +26,8 @@ import type {
   InsertReview,
   Subscription,
   ListingWithDetails,
+  DriverProfile,
+  ReviewDirection,
   PromoCode,
   PromoRedemption,
 } from "@shared/schema";
@@ -60,6 +65,9 @@ export interface IStorage {
   getServicesByListing(listingId: number): Promise<Service[]>;
   createService(s: InsertService): Promise<Service>;
   deleteService(id: number): Promise<void>;
+  // capabilities
+  getCapabilitiesByListing(listingId: number): Promise<TunerCapability[]>;
+  replaceCapabilities(listingId: number, caps: InsertCapability[]): Promise<TunerCapability[]>;
   // vehicles
   getVehiclesByUser(userId: number): Promise<Vehicle[]>;
   createVehicle(v: InsertVehicle): Promise<Vehicle>;
@@ -71,7 +79,11 @@ export interface IStorage {
   updateBooking(id: number, patch: Partial<Booking>): Promise<Booking | undefined>;
   // reviews
   getReviewsByListing(listingId: number): Promise<Review[]>;
+  getReviewsByReviewee(userId: number): Promise<Review[]>;
+  getReviewByBookingDirection(bookingId: number, direction: ReviewDirection): Promise<Review | undefined>;
   createReview(r: InsertReview): Promise<Review>;
+  // driver profile
+  getDriverProfile(userId: number): Promise<DriverProfile | undefined>;
   // subscriptions
   upsertSubscription(userId: number, status: string, currentPeriodEnd: number): Promise<Subscription>;
   setHostSubscription(userId: number, status: string): Promise<User | undefined>;
@@ -128,6 +140,7 @@ export class DatabaseStorage implements IStorage {
       ...l,
       services: await this.getServicesByListing(l.id),
       reviews: await this.getReviewsByListing(l.id),
+      capabilities: await this.getCapabilitiesByListing(l.id),
       tunerName: tuner?.name ?? "Tuner",
     };
   }
@@ -157,6 +170,18 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteService(id: number) {
     await db.delete(services).where(eq(services.id, id));
+  }
+
+  async getCapabilitiesByListing(listingId: number) {
+    return db.select().from(tunerCapabilities).where(eq(tunerCapabilities.listingId, listingId));
+  }
+  async replaceCapabilities(listingId: number, caps: InsertCapability[]) {
+    await db.delete(tunerCapabilities).where(eq(tunerCapabilities.listingId, listingId));
+    if (caps.length === 0) return [];
+    const rows = await db.insert(tunerCapabilities).values(
+      caps.map((c) => ({ ...c, listingId })),
+    ).returning();
+    return rows;
   }
 
   async getVehiclesByUser(userId: number) {
@@ -191,7 +216,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReviewsByListing(listingId: number) {
-    return db.select().from(reviews).where(eq(reviews.listingId, listingId));
+    return db
+      .select()
+      .from(reviews)
+      .where(
+        and(
+          eq(reviews.listingId, listingId),
+          // legacy rows have direction NULL but were customer_to_tuner;
+          // explicit customer_to_tuner rows also belong here.
+          sql`(${reviews.direction} = 'customer_to_tuner' OR ${reviews.direction} IS NULL)`,
+        ),
+      );
+  }
+  async getReviewsByReviewee(userId: number) {
+    return db.select().from(reviews).where(eq(reviews.revieweeUserId, userId));
+  }
+  async getReviewByBookingDirection(bookingId: number, direction: ReviewDirection) {
+    const rows = await db
+      .select()
+      .from(reviews)
+      .where(and(eq(reviews.bookingId, bookingId), eq(reviews.direction, direction)));
+    return rows[0];
   }
   async createReview(r: InsertReview) {
     const rows = await db
@@ -199,6 +244,25 @@ export class DatabaseStorage implements IStorage {
       .values({ ...r, createdAt: Date.now() })
       .returning();
     return rows[0];
+  }
+
+  async getDriverProfile(userId: number): Promise<DriverProfile | undefined> {
+    const u = await this.getUser(userId);
+    if (!u || u.role !== "customer") return undefined;
+    const driverVehicles = await this.getVehiclesByUser(userId);
+    const driverReviews = await this.getReviewsByReviewee(userId);
+    const reviewCount = driverReviews.length;
+    const rating = reviewCount === 0
+      ? 0
+      : Math.round((driverReviews.reduce((s, r) => s + r.rating, 0) / reviewCount) * 10);
+    return {
+      id: u.id,
+      name: u.name,
+      vehicles: driverVehicles,
+      reviews: driverReviews,
+      rating,
+      reviewCount,
+    };
   }
 
   async upsertSubscription(userId: number, status: string, currentPeriodEnd: number) {

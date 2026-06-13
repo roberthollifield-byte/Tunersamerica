@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
 import { usePassGate, PassPaywall } from "@/lib/pass";
 import { apiRequest } from "@/lib/queryClient";
-import { money, parseMakes, listingImage, CATEGORY_LABELS, rating10 } from "@/lib/format";
+import { money, parseMakes, listingImage, CAPABILITY_GROUPS, capabilityLabel, rating10 } from "@/lib/format";
 import dyno from "@/assets/hero-dyno.png";
 import ecu from "@/assets/hero-ecu.png";
 import shop from "@/assets/tuner-shop.png";
@@ -60,6 +60,8 @@ export default function TunerProfile() {
 
   const makes = parseMakes(listing.supportedMakes);
   const gallery = [listingImage(listing.heroImage), dyno, ecu, shop];
+  const capabilities = listing.capabilities ?? [];
+  const tuningCaps = capabilities.filter((c) => c.groupName === "tuning_type");
 
   function startBooking() {
     if (!user) { navigate(`/signin?redirect=/book/${id}`); return; }
@@ -106,25 +108,52 @@ export default function TunerProfile() {
               ))}
             </div>
 
-            {/* Services */}
-            <h2 className="mt-8 font-display text-xl font-bold">Services & pricing</h2>
-            <div className="mt-3 space-y-3">
-              {listing.services.map((s) => (
-                <Card key={s.id} className="flex flex-wrap items-center justify-between gap-4 p-5" data-testid={`card-service-${s.id}`}>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{s.name}</h3>
-                      <Badge variant="outline" className="text-xs">{CATEGORY_LABELS[s.category] ?? s.category}</Badge>
+            {/* Capabilities */}
+            <h2 className="mt-8 font-display text-xl font-bold">Capabilities</h2>
+            <div className="mt-3 space-y-4">
+              {CAPABILITY_GROUPS.filter((g) => g.key !== "tuning_type").map((g) => {
+                const groupCaps = capabilities.filter((c) => c.groupName === g.key);
+                if (groupCaps.length === 0) return null;
+                return (
+                  <div key={g.key} data-testid={`profile-group-${g.key}`}>
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">{g.label}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {groupCaps.map((c) => (
+                        <Badge key={c.id} variant="secondary" data-testid={`badge-cap-${c.groupName}-${c.value}`}>{c.value}</Badge>
+                      ))}
                     </div>
-                    <p className="mt-1 text-sm text-muted-foreground">{s.description}</p>
                   </div>
-                  <div className="text-right">
-                    <div className="font-display text-lg font-bold">{money(s.price)}</div>
-                    <Button size="sm" className="mt-2" onClick={startBooking} data-testid={`button-book-service-${s.id}`}>Book</Button>
-                  </div>
-                </Card>
-              ))}
+                );
+              })}
+              {capabilities.length === 0 && (
+                <p className="text-sm text-muted-foreground">No capabilities listed yet.</p>
+              )}
             </div>
+
+            {/* Tuning types + pricing */}
+            {tuningCaps.length > 0 && (
+              <>
+                <h2 className="mt-8 font-display text-xl font-bold">Tuning types & pricing</h2>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {tuningCaps.map((c) => (
+                    <Card key={c.id} className="flex items-center justify-between gap-4 p-5" data-testid={`card-tuning-${c.value}`}>
+                      <div>
+                        <div className="font-semibold">{capabilityLabel("tuning_type", c.value)}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {c.price != null ? "Starting price" : "Available — contact for pricing"}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {c.price != null && (
+                          <div className="font-display text-lg font-bold">{money(c.price)}</div>
+                        )}
+                        <Button size="sm" className="mt-2" onClick={startBooking} data-testid={`button-book-tuning-${c.value}`}>Book</Button>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </>
+            )}
 
             {/* Reviews */}
             <h2 className="mt-8 font-display text-xl font-bold">Reviews</h2>
@@ -135,7 +164,17 @@ export default function TunerProfile() {
                 {listing.reviews.map((r) => (
                   <Card key={r.id} className="p-5" data-testid={`card-review-${r.id}`}>
                     <div className="flex items-center justify-between">
-                      <div className="font-semibold">{r.authorName}</div>
+                      {r.authorUserId ? (
+                        <button
+                          className="font-semibold underline-offset-2 hover:underline"
+                          onClick={() => navigate(`/drivers/${r.authorUserId}`)}
+                          data-testid={`link-driver-${r.authorUserId}`}
+                        >
+                          {r.authorName}
+                        </button>
+                      ) : (
+                        <div className="font-semibold">{r.authorName}</div>
+                      )}
                       <div className="flex items-center gap-1 text-sm">
                         {Array.from({ length: r.rating }).map((_, i) => (
                           <Star key={i} className="h-3.5 w-3.5 fill-primary text-primary" />
