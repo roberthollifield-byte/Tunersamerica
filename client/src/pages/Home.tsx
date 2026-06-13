@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { ListingWithDetails } from "@shared/schema";
 import { Layout, Section, Eyebrow } from "@/components/Layout";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CATEGORY_LABELS, PLATFORMS } from "@/lib/format";
+import { CATEGORY_LABELS } from "@/lib/format";
 import {
   Wifi, Gauge, Stethoscope, Cpu, Cog, Wrench, Flag, ShieldCheck, Search,
   Star, ArrowRight, BadgeCheck, Quote,
@@ -235,22 +235,6 @@ export default function Home() {
                 ))}
               </ol>
             </Card>
-          ))}
-        </div>
-      </Section>
-
-      {/* PLATFORMS */}
-      <Section className="py-10">
-        <Eyebrow>Browse by platform</Eyebrow>
-        <h2 className="mt-4 font-display text-3xl font-bold md:text-4xl">Tuners for your make.</h2>
-        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {PLATFORMS.map((p) => (
-            <Link key={p.key} href={`/tuners?make=${p.key}`} data-testid={`link-platform-${p.key}`}>
-              <Card className="p-5 hover-elevate">
-                <div className="font-display font-bold">{p.label}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{p.blurb}</div>
-              </Card>
-            </Link>
           ))}
         </div>
       </Section>
