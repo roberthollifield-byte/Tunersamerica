@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { usePassStatus, formatPassRemaining } from "@/lib/pass";
+import { PromoRedeemBox } from "@/lib/promo";
 import { useToast } from "@/hooks/use-toast";
 import { Lock, Check, Sparkles } from "lucide-react";
 import { money } from "@/lib/format";
@@ -209,28 +210,36 @@ function PassStatusCard() {
 
   const active = !!pass?.active;
   return (
-    <Card className="mt-6 flex flex-wrap items-center justify-between gap-4 p-5">
-      <div className="flex items-center gap-3">
-        <div className={`grid h-10 w-10 place-items-center rounded-full ${active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
-          {active ? <Sparkles className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
-        </div>
-        <div>
-          <div className="font-display text-base font-bold">Buyer access pass</div>
-          <div className="text-sm text-muted-foreground" data-testid="text-pass-status">
-            {active ? formatPassRemaining(pass?.passExpiresAt ?? null) : "No active pass — $10 for 30 days of directory access"}
+    <Card className="mt-6 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className={`grid h-10 w-10 place-items-center rounded-full ${active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
+            {active ? <Sparkles className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
+          </div>
+          <div>
+            <div className="font-display text-base font-bold">Driver access pass</div>
+            <div className="text-sm text-muted-foreground" data-testid="text-pass-status">
+              {active ? formatPassRemaining(pass?.passExpiresAt ?? null) : "No active pass — $10 for 30 days of directory access"}
+            </div>
           </div>
         </div>
+        <Button
+          size="sm"
+          variant={active ? "outline" : "default"}
+          onClick={() => buy.mutate()}
+          disabled={buy.isPending}
+          data-testid="button-dash-buy-pass"
+        >
+          {buy.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : active ? <Check className="mr-2 h-4 w-4" /> : null}
+          {active ? "Extend 30 days — $10" : "Buy 30-day pass — $10"}
+        </Button>
       </div>
-      <Button
-        size="sm"
-        variant={active ? "outline" : "default"}
-        onClick={() => buy.mutate()}
-        disabled={buy.isPending}
-        data-testid="button-dash-buy-pass"
-      >
-        {buy.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : active ? <Check className="mr-2 h-4 w-4" /> : null}
-        {active ? "Extend 30 days — $10" : "Buy 30-day pass — $10"}
-      </Button>
+      {!active && (
+        <div className="mt-4 border-t pt-4">
+          <p className="mb-2 text-sm font-medium">Have a promo code?</p>
+          <PromoRedeemBox audience="buyer" />
+        </div>
+      )}
     </Card>
   );
 }

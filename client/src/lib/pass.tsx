@@ -94,6 +94,9 @@ export function PassPaywall({
         >
           Sign in to continue
         </Button>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Have a promo code? Sign in first — you can redeem it from your dashboard.
+        </p>
       </Card>
     );
   }
@@ -132,8 +135,8 @@ export function PassPaywall({
         Buy 30-day pass — $10
       </Button>
       <p className="mt-3 text-xs text-muted-foreground">One-time charge. Pass expires after 30 days.</p>
-      <div className="mt-6 border-t pt-6 text-left">
-        <p className="mb-2 text-center text-sm font-medium">Have a promo code?</p>
+      <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-4 text-left">
+        <p className="mb-2 text-center text-sm font-semibold">Have a promo code?</p>
         <PromoRedeemBox audience="buyer" />
       </div>
     </Card>
