@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Vehicle } from "@shared/schema";
@@ -29,8 +29,35 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function CustomerDashboard() {
-  const { user } = useAuth();
+  const { user, token, loginWithToken } = useAuth();
   const [, navigate] = useLocation();
+  const { toast } = useToast();
+
+  // When Stripe redirects back with ?pass=success, refetch the user so the
+  // driver pass shows as active immediately.
+  useEffect(() => {
+    const hash = window.location.hash || "";
+    const qIdx = hash.indexOf("?");
+    if (qIdx === -1) return;
+    const params = new URLSearchParams(hash.slice(qIdx + 1));
+    if (params.get("pass") === "success" && token) {
+      const run = async () => {
+        await loginWithToken(token);
+        queryClient.invalidateQueries();
+        toast({ title: "Driver pass active", description: "You can now reach the directory and book tuners." });
+        const base = hash.slice(0, qIdx);
+        window.history.replaceState(null, "", `${window.location.pathname}${base}`);
+      };
+      const t = setTimeout(run, 1500);
+      return () => clearTimeout(t);
+    }
+    if (params.get("pass") === "cancelled") {
+      toast({ title: "Checkout cancelled", description: "No charge was made.", variant: "destructive" });
+      const base = hash.slice(0, qIdx);
+      window.history.replaceState(null, "", `${window.location.pathname}${base}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const { data: vehicles, isLoading: vLoading } = useQuery<Vehicle[]>({
     queryKey: ["/api/vehicles", user?.id],

@@ -807,6 +807,65 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ok: true, demoMode: true, currentPeriodEnd: periodEnd, user: updated });
   });
 
+  // Safety net: client calls this when it returns from Stripe Checkout with
+  // ?sub=success. We query Stripe directly for the user's active/trialing
+  // subscription so the dashboard activates even if the webhook hasn't fired
+  // (or is mis-configured). Idempotent.
+  app.post("/api/stripe/refresh-subscription", async (req: Request, res: Response) => {
+    const token = req.body?.token as string | undefined;
+    const user = token ? await storage.getUserByToken(token) : undefined;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+    const stripe = getStripe();
+    if (!stripe) return res.json({ ok: true, user });
+
+    try {
+      // Find subscriptions for this user. Prefer the saved customer id; otherwise
+      // search by metadata.userId.
+      let subs: any[] = [];
+      if (user.stripeCustomerId) {
+        const list = await stripe.subscriptions.list({
+          customer: user.stripeCustomerId,
+          status: "all",
+          limit: 10,
+        });
+        subs = list.data;
+      }
+      if (subs.length === 0) {
+        // Fall back to search API.
+        try {
+          const search = await stripe.subscriptions.search({
+            query: `metadata['userId']:'${user.id}'`,
+            limit: 10,
+          });
+          subs = search.data;
+        } catch (e: any) {
+          console.warn("Subscription search fallback failed:", e?.message);
+        }
+      }
+
+      // Pick the most recent active or trialing one.
+      const live = subs
+        .filter((s) => s.status === "active" || s.status === "trialing")
+        .sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+
+      if (live) {
+        const periodEnd = (live.current_period_end || live.items?.data?.[0]?.current_period_end || 0) * 1000;
+        await storage.upsertSubscription(user.id, "active", periodEnd || (Date.now() + YEAR_MS));
+        const updated = await storage.setHostSubscription(user.id, "active");
+        if (live.customer && !user.stripeCustomerId) {
+          try { await storage.setStripeCustomer(user.id, String(live.customer)); } catch {}
+        }
+        return res.json({ ok: true, status: live.status, currentPeriodEnd: periodEnd, user: updated });
+      }
+
+      return res.json({ ok: true, status: "none", user });
+    } catch (e: any) {
+      console.error("refresh-subscription failed:", e?.message);
+      return res.status(500).json({ message: "Could not refresh subscription", detail: e?.message });
+    }
+  });
+
   // Stripe Connect onboarding (still stubbed — not on the critical path right now).
   app.post("/api/stripe/connect/onboard", async (req: Request, res: Response) => {
     const token = req.body?.token as string | undefined;
@@ -861,6 +920,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             const periodEnd = Date.now() + YEAR_MS; // refined below by invoice.paid
             await storage.upsertSubscription(userId, "active", periodEnd);
             await storage.setHostSubscription(userId, "active");
+            if (session.customer) {
+              try { await storage.setStripeCustomer(userId, String(session.customer)); } catch {}
+            }
+          }
+
+          if (kind === "buyer_pass" && session.customer) {
+            try { await storage.setStripeCustomer(userId, String(session.customer)); } catch {}
           }
           break;
         }

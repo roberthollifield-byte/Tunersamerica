@@ -88,6 +88,7 @@ export interface IStorage {
   upsertSubscription(userId: number, status: string, currentPeriodEnd: number): Promise<Subscription>;
   setHostSubscription(userId: number, status: string): Promise<User | undefined>;
   setStripeAccount(userId: number, accountId: string): Promise<User | undefined>;
+  setStripeCustomer(userId: number, customerId: string): Promise<User | undefined>;
   setBuyerPass(userId: number, expiresAt: number): Promise<User | undefined>;
   // password auth
   setPasswordHash(userId: number, hash: string): Promise<User | undefined>;
@@ -304,6 +305,15 @@ export class DatabaseStorage implements IStorage {
     const rows = await db
       .update(users)
       .set({ stripeAccountId: accountId })
+      .where(eq(users.id, userId))
+      .returning();
+    return rows[0];
+  }
+
+  async setStripeCustomer(userId: number, customerId: string) {
+    const rows = await db
+      .update(users)
+      .set({ stripeCustomerId: customerId })
       .where(eq(users.id, userId))
       .returning();
     return rows[0];

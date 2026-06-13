@@ -37,14 +37,49 @@ const STATUS_COLOR: Record<string, string> = {
 };
 const NEXT_STATUS: Record<string, string> = { requested: "accepted", accepted: "in_progress", in_progress: "completed" };
 
-function DemoBadge() {
-  return <Badge variant="outline" className="gap-1 border-amber-500/40 text-amber-400"><AlertTriangle className="h-3 w-3" /> Demo mode</Badge>;
+function ComingSoonBadge() {
+  return <Badge variant="outline" className="gap-1 border-amber-500/40 text-amber-400"><AlertTriangle className="h-3 w-3" /> Coming soon</Badge>;
 }
 
 export default function TunerDashboard() {
-  const { user, token } = useAuth();
+  const { user, token, loginWithToken } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+
+  // When Stripe redirects back with ?sub=success, refetch the user so the
+  // dashboard immediately reflects host_subscription_status='active' set
+  // by the webhook. Without this, the React user object is stale until sign-out.
+  useEffect(() => {
+    const hash = window.location.hash || "";
+    const qIdx = hash.indexOf("?");
+    if (qIdx === -1) return;
+    const params = new URLSearchParams(hash.slice(qIdx + 1));
+    if (params.get("sub") === "success" && token) {
+      // Ask the server to verify against Stripe directly (safety net for any
+      // webhook delivery issues), then refetch the user.
+      const run = async () => {
+        try {
+          await apiRequest("POST", "/api/stripe/refresh-subscription", { token });
+        } catch (e) {
+          // Non-fatal — continue to refetch user anyway.
+        }
+        await loginWithToken(token);
+        queryClient.invalidateQueries();
+        toast({ title: "Subscription active", description: "Welcome aboard \u2014 your listing is live." });
+        const base = hash.slice(0, qIdx);
+        window.history.replaceState(null, "", `${window.location.pathname}${base}`);
+      };
+      // Small delay so any webhook racing the redirect has a head start.
+      const t = setTimeout(run, 1500);
+      return () => clearTimeout(t);
+    }
+    if (params.get("sub") === "cancelled") {
+      toast({ title: "Checkout cancelled", description: "No charge was made.", variant: "destructive" });
+      const base = hash.slice(0, qIdx);
+      window.history.replaceState(null, "", `${window.location.pathname}${base}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const { data: listing, isLoading } = useQuery<ListingWithDetails | null>({
     queryKey: ["/api/me/listing", token],
@@ -92,7 +127,6 @@ export default function TunerDashboard() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="font-display text-3xl font-bold">Tuner dashboard</h1>
-              <DemoBadge />
             </div>
             <p className="mt-1 text-muted-foreground">{listing?.shopName ?? user.name}</p>
           </div>
@@ -225,7 +259,6 @@ export default function TunerDashboard() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-lg font-bold">Host subscription</h2>
-                <DemoBadge />
               </div>
               <div className="mt-3 flex items-end gap-1">
                 <span className="font-display text-3xl font-bold">$99</span><span className="pb-1 text-muted-foreground">/ year</span>
@@ -256,7 +289,7 @@ export default function TunerDashboard() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-lg font-bold">Stripe Connect</h2>
-                <DemoBadge />
+                <ComingSoonBadge />
               </div>
               <p className="mt-2 text-sm text-muted-foreground">Connect a Stripe account to receive payouts for completed bookings.</p>
               {user.stripeAccountId ? (
