@@ -16,7 +16,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { usePassGate, PassPaywall } from "@/lib/pass";
 import { useToast } from "@/hooks/use-toast";
-import { money, CATEGORY_LABELS } from "@/lib/format";
+import { money, TUNING_TYPE_LABELS } from "@/lib/format";
 import { Check, ShieldAlert, Loader2, ArrowRight, PartyPopper } from "lucide-react";
 
 export default function Book() {
@@ -41,6 +41,20 @@ export default function Book() {
     enabled: !!user,
   });
 
+  // Tuners now publish prices via tuning-type capabilities (dyno/street/track/remote)
+  // rather than free-form services. Build the bookable options from those rows.
+  const tuningOptions = useMemo(() => {
+    const caps = listing?.capabilities ?? [];
+    return caps
+      .filter((c) => c.groupName === "tuning_type" && typeof c.price === "number" && c.price! > 0)
+      .map((c) => ({
+        id: c.id,
+        value: c.value,
+        label: TUNING_TYPE_LABELS[c.value] ?? c.value,
+        price: c.price ?? 0,
+      }));
+  }, [listing]);
+
   const [serviceId, setServiceId] = useState<string>("");
   const [vehicleId, setVehicleId] = useState<string>("");
   // new vehicle quick-add
@@ -53,7 +67,7 @@ export default function Book() {
   const [ack, setAck] = useState(false);
   const [done, setDone] = useState<{ total: number } | null>(null);
 
-  const selectedService = listing?.services.find((s) => String(s.id) === serviceId);
+  const selectedService = tuningOptions.find((o) => String(o.id) === serviceId);
   const subtotal = selectedService?.price ?? listing?.startingPrice ?? 0;
   // No platform fee — buyer & tuner arrange payment directly.
   const total = subtotal;
@@ -79,14 +93,19 @@ export default function Book() {
         const v = await createVehicle.mutateAsync();
         vId = v.id;
       }
+      // Tuning-type rows live in tuner_capabilities, not services — send null
+      // for serviceId and prefix the tuning type in notes so the tuner sees it.
+      const notesWithType = selectedService
+        ? `[${selectedService.label} tune] ${goals}`.trim()
+        : goals;
       const res = await apiRequest("POST", "/api/bookings", {
         customerId: user!.id,
         listingId: id,
-        serviceId: selectedService?.id ?? null,
+        serviceId: null,
         vehicleId: vId,
         subtotal,
         insuranceAcknowledged: true,
-        notes: goals,
+        notes: notesWithType,
         token,
       });
       return res.json();
@@ -144,18 +163,24 @@ export default function Book() {
           <div className="space-y-6">
             <Card className="p-6">
               <h2 className="font-display text-lg font-bold">1. Choose a service</h2>
-              <Select value={serviceId} onValueChange={setServiceId}>
-                <SelectTrigger className="mt-3" data-testid="select-book-service"><SelectValue placeholder="Select a service" /></SelectTrigger>
-                <SelectContent>
-                  {listing.services.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>{s.name} — {money(s.price)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {tuningOptions.length > 0 ? (
+                <Select value={serviceId} onValueChange={setServiceId}>
+                  <SelectTrigger className="mt-3" data-testid="select-book-service"><SelectValue placeholder="Select a service" /></SelectTrigger>
+                  <SelectContent>
+                    {tuningOptions.map((o) => (
+                      <SelectItem key={o.id} value={String(o.id)}>{o.label} tune — {money(o.price)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="mt-3 rounded-md border border-dashed border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  This tuner hasn’t published prices yet. Reach out to them directly to discuss.
+                </p>
+              )}
               {selectedService && (
                 <div className="mt-3 flex items-center gap-2">
-                  <Badge variant="outline">{CATEGORY_LABELS[selectedService.category]}</Badge>
-                  <span className="text-sm text-muted-foreground">{selectedService.description}</span>
+                  <Badge variant="outline">{selectedService.label}</Badge>
+                  <span className="text-sm text-muted-foreground">{money(selectedService.price)} — contact the tuner if your build needs custom pricing.</span>
                 </div>
               )}
             </Card>
@@ -202,7 +227,7 @@ export default function Book() {
             <Card className="p-6 lg:sticky lg:top-24">
               <h2 className="font-display text-lg font-bold">Review & confirm</h2>
               <div className="mt-4 space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Service</span><span className="text-right font-medium">{selectedService?.name ?? "Starting service"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Service</span><span className="text-right font-medium">{selectedService ? `${selectedService.label} tune` : "Starting service"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Service price</span><span data-testid="text-subtotal">{money(subtotal)}</span></div>
                 <div className="flex justify-between text-xs text-muted-foreground"><span>Platform fee</span><span data-testid="text-service-fee">$0 (paid via $10 pass)</span></div>
                 <div className="flex justify-between border-t border-border pt-2 text-base font-bold"><span>You owe the tuner</span><span data-testid="text-total">{money(total)}</span></div>
