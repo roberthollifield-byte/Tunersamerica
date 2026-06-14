@@ -108,12 +108,13 @@ export default function Home() {
         <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
             <Eyebrow>Remote + in-person tuning</Eyebrow>
-            <h1 className="mt-5 max-w-[12ch] font-display text-5xl font-extrabold leading-[0.95] tracking-tight md:text-6xl" data-testid="text-hero-title">
-              Find the right tuner for your build.
+            <h1 className="mt-5 max-w-[14ch] font-display text-5xl font-extrabold leading-[0.95] tracking-tight md:text-6xl" data-testid="text-hero-title">
+              Find a tuner near you.
             </h1>
             <p className="mt-5 max-w-xl text-lg text-muted-foreground">
-              Connect with verified automotive tuners for remote tuning, dyno sessions, diagnostics,
-              ECU calibration, transmission tuning, and platform-specific performance help.
+              TunersAmerica is the nationwide marketplace for verified automotive tuners. Search by
+              ZIP and distance, compare dyno tuning, remote ECU tuning, diesel, and drag-race specialists,
+              read real reviews, and book online.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Button size="lg" onClick={() => navigate("/tuners")} data-testid="button-hero-find">
@@ -257,6 +258,63 @@ export default function Home() {
             </Card>
           ))}
         </div>
+      </Section>
+
+      {/* FAQ — high-intent answers that both help drivers and feed Google rich-result snippets. */}
+      <Section className="py-10">
+        <Eyebrow>Common questions</Eyebrow>
+        <h2 className="mt-4 font-display text-3xl font-bold md:text-4xl">How TunersAmerica works.</h2>
+        <div className="mt-8 grid gap-5 md:grid-cols-2">
+          {[
+            {
+              q: "How do I find a tuner near me?",
+              a: "Enter your ZIP code on the Find a Tuner page and choose a search radius (25, 50, 100, 250 miles, or anywhere). We\u2019ll show every verified tuner within range, sorted by distance, with their tuning types, supported platforms, and reviews.",
+            },
+            {
+              q: "What kinds of tuning can I book?",
+              a: "Dyno tuning, street tuning, track-day tuning, and remote ECU tuning. Tuners on the platform also list their supported makes, engines, fuel types, transmissions, and forced-induction experience so you can match the right shop to your build.",
+            },
+            {
+              q: "Are the tuners verified?",
+              a: "Yes. Every tuner on TunersAmerica goes through a vetting process before their listing is published. We confirm their shop, supported platforms, and capabilities. Reviews come from real customers who completed a booking through the site.",
+            },
+            {
+              q: "Can I get a remote tune if there\u2019s no shop near me?",
+              a: "Absolutely. Many of our tuners specialize in remote calibration for HP Tuners, EFILive, COBB, MoTeC, and other platforms. You send datalogs, they send revised files \u2014 no road trip required.",
+            },
+            {
+              q: "What does it cost?",
+              a: "Pricing is set by each tuner. Most charge by tuning type (dyno, street, track, remote) and post starting prices on their profile. Booking through TunersAmerica is free for drivers; tuners pay an annual subscription to list.",
+            },
+            {
+              q: "What if my build is unusual?",
+              a: "Use the filters on the tuner directory to narrow by make, engine, forced induction, fuel, and transmission. If you don\u2019t see a perfect match, message a tuner directly \u2014 most will discuss custom builds before you book.",
+            },
+          ].map((f) => (
+            <Card key={f.q} className="p-6">
+              <h3 className="font-display text-lg font-bold">{f.q}</h3>
+              <p className="mt-2 text-muted-foreground">{f.a}</p>
+            </Card>
+          ))}
+        </div>
+        {/* FAQPage JSON-LD so Google can show these as rich snippets on the SERP. */}
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: [
+                { "@type": "Question", name: "How do I find a tuner near me?", acceptedAnswer: { "@type": "Answer", text: "Enter your ZIP code on the Find a Tuner page and choose a search radius. We\u2019ll show every verified tuner within range, sorted by distance." } },
+                { "@type": "Question", name: "What kinds of tuning can I book?", acceptedAnswer: { "@type": "Answer", text: "Dyno, street, track, and remote ECU tuning across nearly every modern platform." } },
+                { "@type": "Question", name: "Are the tuners verified?", acceptedAnswer: { "@type": "Answer", text: "Yes. Every tuner is vetted before their listing is published, and reviews come from real customers who completed a booking." } },
+                { "@type": "Question", name: "Can I get a remote tune if there is no shop near me?", acceptedAnswer: { "@type": "Answer", text: "Many tuners specialize in remote calibration via HP Tuners, EFILive, COBB, MoTeC, and similar platforms." } },
+                { "@type": "Question", name: "What does it cost?", acceptedAnswer: { "@type": "Answer", text: "Pricing is set by each tuner. Booking is free for drivers; tuners pay an annual subscription to list." } },
+              ],
+            }),
+          }}
+        />
       </Section>
 
       {/* FINAL CTA */}

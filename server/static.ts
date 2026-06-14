@@ -2,6 +2,7 @@ import express from 'express';
 import type { Express } from 'express';
 import fs from "node:fs";
 import path from "node:path";
+import { registerSeoRoutes } from "./seo";
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");
@@ -10,6 +11,10 @@ export function serveStatic(app: Express) {
       `Could not find the build directory: ${distPath}, make sure to build the client first`,
     );
   }
+
+  // SEO routes BEFORE express.static so /robots.txt, /sitemap.xml, and
+  // pretty crawler URLs (/tuners/:id) are served with the right headers.
+  registerSeoRoutes(app, distPath);
 
   app.use(express.static(distPath));
 
