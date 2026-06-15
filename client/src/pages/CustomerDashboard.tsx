@@ -14,7 +14,7 @@ import { PromoRedeemBox } from "@/lib/promo";
 import { useToast } from "@/hooks/use-toast";
 import { Lock, Check, Sparkles } from "lucide-react";
 import { money } from "@/lib/format";
-import { Calendar, MessageSquare, Loader2 } from "lucide-react";
+import { Calendar, MessageSquare, Loader2, Phone } from "lucide-react";
 import { LeaveReviewDialog } from "@/components/LeaveReviewDialog";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -62,6 +62,13 @@ export default function CustomerDashboard() {
     enabled: !!user,
   });
 
+  const { data: consults, isLoading: cLoading } = useQuery<any[]>({
+    queryKey: ["/api/me/consultations", user?.id],
+    queryFn: async () =>
+      (await apiRequest("GET", `/api/me/consultations?token=${encodeURIComponent(token!)}`)).json(),
+    enabled: !!user && !!token,
+  });
+
   if (!user) {
     return <Layout><Section><Card className="p-8 text-center"><p className="text-muted-foreground">Please sign in.</p><Button className="mt-4" onClick={() => navigate("/signin")}>Sign in</Button></Card></Section></Layout>;
   }
@@ -82,6 +89,7 @@ export default function CustomerDashboard() {
         <Tabs defaultValue="bookings" className="mt-8">
           <TabsList>
             <TabsTrigger value="bookings" data-testid="tab-bookings"><Calendar className="mr-2 h-4 w-4" />Bookings</TabsTrigger>
+            <TabsTrigger value="consults" data-testid="tab-consults"><Phone className="mr-2 h-4 w-4" />Phone Consults</TabsTrigger>
             <TabsTrigger value="messages" data-testid="tab-messages"><MessageSquare className="mr-2 h-4 w-4" />Messages</TabsTrigger>
           </TabsList>
 
@@ -108,6 +116,42 @@ export default function CustomerDashboard() {
                           invalidateKeys={[["/api/bookings", "customer", user?.id]]}
                         />
                       )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Phone consultations */}
+          <TabsContent value="consults" className="mt-6">
+            {cLoading ? <Skeleton className="h-40 w-full" /> : (consults?.length ?? 0) === 0 ? (
+              <Card className="p-12 text-center text-muted-foreground">
+                <Phone className="mx-auto h-8 w-8 text-muted-foreground" />
+                <p className="mt-3">No phone consultations yet.</p>
+                <p className="mt-1 text-sm">Open a tuner's profile and tap "$125 · 1-hour phone consult" to request one.</p>
+                <Button variant="ghost" className="mt-3" onClick={() => navigate("/tuners")}>Find a tuner</Button>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {consults!.map((c) => (
+                  <Card key={c.id} className="p-5" data-testid={`card-consult-${c.id}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{c.shopName || c.tunerName || "Tuner"} · $125 / 1 hour</div>
+                        <div className="mt-1 text-sm text-muted-foreground">Topic: {c.topic}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">Preferred: {c.preferredTime}</div>
+                        {c.tunerPhone && c.status === "accepted" && (
+                          <div className="mt-2 text-sm">
+                            <span className="text-muted-foreground">Call them at: </span>
+                            <a href={`tel:${c.tunerPhone}`} className="font-semibold text-primary underline-offset-2 hover:underline" data-testid={`text-tuner-phone-${c.id}`}>{c.tunerPhone}</a>
+                          </div>
+                        )}
+                        {c.scheduledAt && c.status === "accepted" && (
+                          <div className="mt-1 text-sm text-muted-foreground">Scheduled: {c.scheduledAt}</div>
+                        )}
+                      </div>
+                      <Badge className={STATUS_COLOR[c.status] || "bg-muted text-foreground"}>{c.status}</Badge>
                     </div>
                   </Card>
                 ))}

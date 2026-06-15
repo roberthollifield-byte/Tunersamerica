@@ -9,6 +9,7 @@ import {
   subscriptions,
   promoCodes,
   promoRedemptions,
+  phoneConsultations,
 } from "@shared/schema";
 import type {
   User,
@@ -30,11 +31,14 @@ import type {
   ReviewDirection,
   PromoCode,
   PromoRedemption,
+  PhoneConsultation,
+  CreateConsult,
+  ConsultStatus,
 } from "@shared/schema";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 const pool = new Pool({
@@ -102,6 +106,12 @@ export interface IStorage {
   getPromoCodeByCode(code: string): Promise<PromoCode | undefined>;
   getPromoRedemption(userId: number, promoCodeId: number, role: string): Promise<PromoRedemption | undefined>;
   redeemPromo(userId: number, promoCodeId: number, role: "buyer" | "tuner"): Promise<PromoRedemption>;
+  // phone consultations
+  createConsult(input: CreateConsult): Promise<PhoneConsultation>;
+  getConsultsForDriver(driverId: number): Promise<PhoneConsultation[]>;
+  getConsultsForTuner(tunerId: number): Promise<PhoneConsultation[]>;
+  getConsultById(id: number): Promise<PhoneConsultation | undefined>;
+  updateConsultStatus(id: number, status: ConsultStatus, opts?: { tunerPhone?: string; scheduledAt?: string }): Promise<PhoneConsultation | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -418,6 +428,66 @@ export class DatabaseStorage implements IStorage {
         .where(eq(promoCodes.id, promoCodeId));
     }
     return inserted[0];
+  }
+
+  /* ---------------- Phone Consultations ---------------- */
+  async createConsult(input: CreateConsult): Promise<PhoneConsultation> {
+    const now = Date.now();
+    const [row] = await db
+      .insert(phoneConsultations)
+      .values({
+        driverId: input.driverId,
+        tunerId: input.tunerId,
+        driverPhone: input.driverPhone,
+        topic: input.topic,
+        preferredTime: input.preferredTime,
+        status: "requested",
+        priceCents: 12500,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    return row;
+  }
+
+  async getConsultsForDriver(driverId: number): Promise<PhoneConsultation[]> {
+    return await db
+      .select()
+      .from(phoneConsultations)
+      .where(eq(phoneConsultations.driverId, driverId))
+      .orderBy(desc(phoneConsultations.createdAt));
+  }
+
+  async getConsultsForTuner(tunerId: number): Promise<PhoneConsultation[]> {
+    return await db
+      .select()
+      .from(phoneConsultations)
+      .where(eq(phoneConsultations.tunerId, tunerId))
+      .orderBy(desc(phoneConsultations.createdAt));
+  }
+
+  async getConsultById(id: number): Promise<PhoneConsultation | undefined> {
+    const [row] = await db
+      .select()
+      .from(phoneConsultations)
+      .where(eq(phoneConsultations.id, id));
+    return row;
+  }
+
+  async updateConsultStatus(
+    id: number,
+    status: ConsultStatus,
+    opts?: { tunerPhone?: string; scheduledAt?: string }
+  ): Promise<PhoneConsultation | undefined> {
+    const patch: Record<string, unknown> = { status, updatedAt: Date.now() };
+    if (opts?.tunerPhone !== undefined) patch.tunerPhone = opts.tunerPhone;
+    if (opts?.scheduledAt !== undefined) patch.scheduledAt = opts.scheduledAt;
+    const [row] = await db
+      .update(phoneConsultations)
+      .set(patch)
+      .where(eq(phoneConsultations.id, id))
+      .returning();
+    return row;
   }
 }
 

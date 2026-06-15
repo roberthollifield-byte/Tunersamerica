@@ -43,6 +43,13 @@
       "when": 1781567400000,
       "tag": "0005_capabilities_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781901600000,
+      "tag": "0006_phone_consultations",
+      "breakpoints": true
     }
   ]
 }

@@ -22,8 +22,17 @@ import { ImageUpload } from "@/components/ImageUpload";
 import { PromoRedeemBox } from "@/lib/promo";
 import {
   Store, Wrench, Calendar, DollarSign, CreditCard, Link2,
-  Loader2, CheckCircle2, AlertTriangle, Gauge, Wifi, Save,
+  Loader2, CheckCircle2, AlertTriangle, Gauge, Wifi, Save, Phone, X,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 // Default starting prices for tuning-type rows.
 const TUNING_TYPE_PRICE_DEFAULTS: Record<string, number> = {
@@ -199,6 +208,7 @@ export default function TunerDashboard() {
             <TabsTrigger value="listing" data-testid="tab-listing"><Store className="mr-2 h-4 w-4" />Listing</TabsTrigger>
             <TabsTrigger value="services" data-testid="tab-services"><Wrench className="mr-2 h-4 w-4" />Capabilities</TabsTrigger>
             <TabsTrigger value="bookings" data-testid="tab-tuner-bookings"><Calendar className="mr-2 h-4 w-4" />Bookings</TabsTrigger>
+            <TabsTrigger value="consults" data-testid="tab-tuner-consults"><Phone className="mr-2 h-4 w-4" />Phone Consults</TabsTrigger>
             <TabsTrigger value="earnings" data-testid="tab-earnings"><DollarSign className="mr-2 h-4 w-4" />Earnings</TabsTrigger>
             <TabsTrigger value="subscription" data-testid="tab-subscription"><CreditCard className="mr-2 h-4 w-4" />Subscription</TabsTrigger>
             <TabsTrigger value="stripe" data-testid="tab-stripe"><Link2 className="mr-2 h-4 w-4" />Stripe Connect</TabsTrigger>
@@ -251,6 +261,11 @@ export default function TunerDashboard() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* Phone consultations (incoming requests) */}
+          <TabsContent value="consults" className="mt-6">
+            <TunerConsultsPanel />
           </TabsContent>
 
           {/* Earnings */}
@@ -693,5 +708,178 @@ function ListingEditor({
         </Button>
       </div>
     </Card>
+  );
+}
+
+/* ---------------- Phone consultations panel (tuner) ---------------- */
+
+function TunerConsultsPanel() {
+  const { user, token } = useAuth();
+  const { toast } = useToast();
+  const { data: consults, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/me/consultations", user?.id],
+    queryFn: async () =>
+      (await apiRequest("GET", `/api/me/consultations?token=${encodeURIComponent(token!)}`)).json(),
+    enabled: !!user && !!token,
+  });
+
+  const update = useMutation({
+    mutationFn: async (args: { id: number; status: string; tunerPhone?: string; scheduledAt?: string }) => {
+      const res = await apiRequest("PATCH", `/api/consultations/${args.id}/status`, {
+        token,
+        status: args.status,
+        tunerPhone: args.tunerPhone,
+        scheduledAt: args.scheduledAt,
+      });
+      return res.json();
+    },
+    onSuccess: (_d, vars) => {
+      toast({
+        title: vars.status === "accepted" ? "Consult accepted" : vars.status === "declined" ? "Consult declined" : "Consult updated",
+        description: vars.status === "accepted" ? "Driver now sees your number and the scheduled time." : undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/me/consultations"] });
+    },
+    onError: (e: any) =>
+      toast({ title: "Update failed", description: e.message, variant: "destructive" }),
+  });
+
+  if (isLoading) return <Skeleton className="h-40 w-full" />;
+  if ((consults?.length ?? 0) === 0) {
+    return (
+      <Card className="p-12 text-center text-muted-foreground">
+        <Phone className="mx-auto h-8 w-8 text-muted-foreground" />
+        <p className="mt-3">No phone consultations yet.</p>
+        <p className="mt-1 text-sm">Drivers can book a 1-hour phone consult ($125) from your profile. You'll see new requests here.</p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {consults!.map((c) => (
+        <Card key={c.id} className="p-5" data-testid={`card-tuner-consult-${c.id}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">{c.driverName || "Driver"} · $125 / 1 hour</div>
+              <div className="mt-1 text-sm text-muted-foreground">Topic: {c.topic}</div>
+              <div className="mt-1 text-sm text-muted-foreground">Preferred: {c.preferredTime}</div>
+              <div className="mt-2 text-sm">
+                <span className="text-muted-foreground">Driver phone: </span>
+                <a href={`tel:${c.driverPhone}`} className="font-semibold text-primary underline-offset-2 hover:underline" data-testid={`text-driver-phone-${c.id}`}>{c.driverPhone}</a>
+              </div>
+              {c.scheduledAt && (
+                <div className="mt-1 text-sm text-muted-foreground">Scheduled: {c.scheduledAt}</div>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <Badge className={STATUS_COLOR[c.status] || "bg-muted text-foreground"}>{c.status}</Badge>
+              {c.status === "requested" && (
+                <div className="flex gap-2">
+                  <AcceptConsultDialog
+                    consultId={c.id}
+                    onSubmit={(tunerPhone, scheduledAt) =>
+                      update.mutate({ id: c.id, status: "accepted", tunerPhone, scheduledAt })
+                    }
+                    pending={update.isPending}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => update.mutate({ id: c.id, status: "declined" })}
+                    disabled={update.isPending}
+                    data-testid={`button-decline-consult-${c.id}`}
+                  >
+                    <X className="mr-1 h-4 w-4" /> Decline
+                  </Button>
+                </div>
+              )}
+              {c.status === "accepted" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => update.mutate({ id: c.id, status: "completed" })}
+                  disabled={update.isPending}
+                  data-testid={`button-complete-consult-${c.id}`}
+                >
+                  Mark completed
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function AcceptConsultDialog({
+  consultId,
+  onSubmit,
+  pending,
+}: {
+  consultId: number;
+  onSubmit: (tunerPhone: string, scheduledAt: string) => void;
+  pending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tunerPhone, setTunerPhone] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (tunerPhone.trim().length < 7 || scheduledAt.trim().length < 2) return;
+    onSubmit(tunerPhone.trim(), scheduledAt.trim());
+    setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" data-testid={`button-accept-consult-${consultId}`}>
+          <CheckCircle2 className="mr-1 h-4 w-4" /> Accept
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Accept consult</DialogTitle>
+          <DialogDescription>
+            Share your phone number with the driver and confirm when the call will happen. They'll be notified instantly and can reach you at the time below.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor={`accept-phone-${consultId}`}>Your phone number</Label>
+            <Input
+              id={`accept-phone-${consultId}`}
+              type="tel"
+              placeholder="(555) 123-4567"
+              value={tunerPhone}
+              onChange={(e) => setTunerPhone(e.target.value)}
+              data-testid={`input-accept-phone-${consultId}`}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`accept-time-${consultId}`}>Scheduled day & time</Label>
+            <Input
+              id={`accept-time-${consultId}`}
+              placeholder="e.g. Tuesday 7pm EST"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+              data-testid={`input-accept-time-${consultId}`}
+              required
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={pending} data-testid={`button-accept-submit-${consultId}`}>
+              {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Accept & share number
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

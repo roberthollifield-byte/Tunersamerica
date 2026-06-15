@@ -15,6 +15,7 @@ import dyno from "@/assets/hero-dyno.png";
 import ecu from "@/assets/hero-ecu.png";
 import shop from "@/assets/tuner-shop.png";
 import { MapPin, Gauge, Wifi, Star, Check, MessageSquare } from "lucide-react";
+import { ConsultDialog } from "@/components/ConsultDialog";
 
 export default function TunerProfile() {
   const [, params] = useRoute("/tuners/:id");
@@ -198,6 +199,13 @@ export default function TunerProfile() {
               <Button variant="outline" className="mt-2 w-full" onClick={startBooking} data-testid="button-request-quote">
                 <MessageSquare className="mr-2 h-4 w-4" /> Request a quote
               </Button>
+              {(!user || user.role === "customer") && (
+                <ConsultDialog
+                  tunerId={listing.userId}
+                  tunerName={listing.shopName}
+                  shopName={listing.shopName}
+                />
+              )}
               <ul className="mt-5 space-y-2 text-sm text-muted-foreground">
                 {[
                   listing.remoteAvailable ? "Remote tuning available" : "In-person work",

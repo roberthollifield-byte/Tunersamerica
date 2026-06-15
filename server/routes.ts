@@ -18,6 +18,8 @@ import {
   FUELS,
   INDUCTION,
   APPLICATIONS,
+  createConsultSchema,
+  consultStatuses,
 } from "@shared/schema";
 import { z } from "zod";
 import {
@@ -1036,6 +1038,104 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       console.error("Webhook handler error:", err?.message);
       res.status(500).json({ message: "Webhook handler error" });
     }
+  });
+
+  /* ---------- Phone Consultations ($125, paid off-platform) ---------- */
+
+  // Driver books a 1-hour phone consult with a tuner.
+  app.post("/api/consultations", async (req: Request, res: Response) => {
+    const token = (req.body?.token as string | undefined) || (req.query.token as string | undefined);
+    if (!token) return res.status(401).json({ message: "Sign in required" });
+    const user = await storage.getUserByToken(token);
+    if (!user) return res.status(401).json({ message: "Invalid session" });
+    if (user.role !== "customer") {
+      return res.status(403).json({ message: "Only drivers can book phone consultations" });
+    }
+    const parsed = createConsultSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const msg = parsed.error.errors[0]?.message || "Invalid consultation request";
+      return res.status(400).json({ message: msg });
+    }
+    const data = parsed.data;
+    if (data.driverId !== user.id) {
+      return res.status(403).json({ message: "Driver mismatch" });
+    }
+    const tuner = await storage.getUser(data.tunerId);
+    if (!tuner || tuner.role !== "tuner") {
+      return res.status(404).json({ message: "Tuner not found" });
+    }
+    const consult = await storage.createConsult(data);
+    res.json(consult);
+  });
+
+  // List consultations for the signed-in user (auto-detects driver vs tuner).
+  app.get("/api/me/consultations", async (req: Request, res: Response) => {
+    const token = req.query.token as string | undefined;
+    if (!token) return res.status(401).json({ message: "Sign in required" });
+    const user = await storage.getUserByToken(token);
+    if (!user) return res.status(401).json({ message: "Invalid session" });
+    const list = user.role === "tuner"
+      ? await storage.getConsultsForTuner(user.id)
+      : await storage.getConsultsForDriver(user.id);
+    // Enrich with the other party's name + shop name for display.
+    const enriched = await Promise.all(
+      list.map(async (c) => {
+        const driver = await storage.getUser(c.driverId);
+        const tunerUser = await storage.getUser(c.tunerId);
+        const listing = await storage.getListingByUserId(c.tunerId).catch(() => null as any);
+        return {
+          ...c,
+          driverName: driver?.name,
+          tunerName: tunerUser?.name,
+          shopName: listing?.shopName,
+        };
+      })
+    );
+    res.json(enriched);
+  });
+
+  // Tuner (or driver, for cancel) updates a consult.
+  app.patch("/api/consultations/:id/status", async (req: Request, res: Response) => {
+    const token = (req.body?.token as string | undefined) || (req.query.token as string | undefined);
+    if (!token) return res.status(401).json({ message: "Sign in required" });
+    const user = await storage.getUserByToken(token);
+    if (!user) return res.status(401).json({ message: "Invalid session" });
+    const id = Number(req.params.id);
+    const consult = await storage.getConsultById(id);
+    if (!consult) return res.status(404).json({ message: "Consultation not found" });
+
+    const bodySchema = z.object({
+      status: z.enum(consultStatuses),
+      tunerPhone: z.string().min(7).optional(),
+      scheduledAt: z.string().min(1).optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      const msg = parsed.error.errors[0]?.message || "Invalid update";
+      return res.status(400).json({ message: msg });
+    }
+    const { status, tunerPhone, scheduledAt } = parsed.data;
+
+    // Authorization rules
+    const isTuner = user.id === consult.tunerId;
+    const isDriver = user.id === consult.driverId;
+    if (!isTuner && !isDriver && user.role !== "admin") {
+      return res.status(403).json({ message: "Not your consultation" });
+    }
+    if (status === "accepted" || status === "declined" || status === "completed") {
+      if (!isTuner && user.role !== "admin") {
+        return res.status(403).json({ message: "Only the tuner can accept, decline, or complete" });
+      }
+      if (status === "accepted" && !tunerPhone) {
+        return res.status(400).json({ message: "Tuner phone number is required when accepting" });
+      }
+    }
+    if (status === "cancelled" && !isDriver && user.role !== "admin") {
+      return res.status(403).json({ message: "Only the driver can cancel" });
+    }
+
+    const updated = await storage.updateConsultStatus(id, status, { tunerPhone, scheduledAt });
+    res.json(updated);
   });
 
   return httpServer;

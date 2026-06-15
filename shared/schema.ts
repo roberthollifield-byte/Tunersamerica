@@ -254,6 +254,48 @@ export const promoRedemptions = pgTable("promo_redemptions", {
 });
 export type PromoRedemption = typeof promoRedemptions.$inferSelect;
 
+/* ---------------- Phone Consultations ----------------
+ * Flat $125 / 1-hour phone call between a driver and a tuner. Driver requests
+ * a slot with a topic + their phone; tuner accepts and shares their number.
+ * Payment happens off-platform (tuner keeps all of it).
+ */
+export const consultStatuses = [
+  "requested",   // driver submitted, tuner has not responded
+  "accepted",    // tuner accepted, numbers shared, call scheduled
+  "declined",    // tuner declined
+  "completed",   // call finished
+  "cancelled",   // either party cancelled before the call
+] as const;
+export type ConsultStatus = (typeof consultStatuses)[number];
+
+export const phoneConsultations = pgTable("phone_consultations", {
+  id: serial("id").primaryKey(),
+  driverId: integer("driver_id").notNull(),
+  tunerId: integer("tuner_id").notNull(),
+  status: text("status").notNull().default("requested"),
+  driverPhone: text("driver_phone").notNull(),
+  tunerPhone: text("tuner_phone"), // populated when tuner accepts
+  topic: text("topic").notNull().default(""),
+  // Driver's preferred call window, plain free-form text ("Tuesday after 5pm CT",
+  // "Sat morning", etc). Keeps it simple — no calendar integration yet.
+  preferredTime: text("preferred_time").notNull().default(""),
+  // Free-form scheduled time once tuner accepts ("Tue 6/16 7:30 PM CT").
+  scheduledAt: text("scheduled_at"),
+  priceCents: integer("price_cents").notNull().default(12500),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+
+export const createConsultSchema = z.object({
+  driverId: z.number(),
+  tunerId: z.number(),
+  driverPhone: z.string().min(7, "Enter a valid phone number"),
+  topic: z.string().min(3, "Briefly describe what you want to discuss"),
+  preferredTime: z.string().min(2, "When can you take the call?"),
+});
+export type CreateConsult = z.infer<typeof createConsultSchema>;
+export type PhoneConsultation = typeof phoneConsultations.$inferSelect;
+
 /* ---------------- Derived view types ---------------- */
 export type ListingWithDetails = TunerListing & {
   services: Service[];
